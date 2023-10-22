@@ -1,4 +1,4 @@
-use std::{debug_assert, borrow::Borrow};
+use std::{debug_assert, borrow::Borrow, ops::Range};
 
 use crate::Rom;
 
@@ -36,6 +36,7 @@ impl KnownRiscOsVersion {
 
 pub trait SliceExt {
 	fn get_word(&self, pos: usize) -> Option<u32>;
+	fn get_all(&self, range: Range<u32>) -> Option<&[u8]>;
 }
 
 impl SliceExt for [u8] {
@@ -44,6 +45,18 @@ impl SliceExt for [u8] {
 		Some(u32::from_le_bytes([
 			self[pos_top - 4], self[pos_top - 3], self[pos_top - 2], self[pos_top - 1]
 		]))
+	}
+
+	fn get_all(&self, range: Range<u32>) -> Option<&[u8]> {
+		let in_range = {
+			let limit = self.len();
+			move |n: &u32| (*n as usize) <= limit
+		};
+
+		Some(range.start).filter(in_range)?;
+		Some(range.end).filter(in_range)?;
+
+		Some(&self[(range.start as usize)..(range.end as usize)])
 	}
 }
 
@@ -61,6 +74,15 @@ mod test_slice_ext {
 		assert!(SRC.get_word(6).is_none());
 		assert!(SRC.get_word(9).is_none());
 		assert!(SRC.get_word(9999).is_none());
+	}
+
+	#[test]
+	fn get_all() {
+		const SRC: &[u8] = b"stone building".as_slice();
+		assert_eq!(Some(&b"stone"[..]), SRC.get_all(0..5));
+		assert_eq!(Some(&b"building"[..]), SRC.get_all(6..14));
+		assert_eq!(None, SRC.get_all(6..15));
+		assert_eq!(None, SRC.get_all(20..21));
 	}
 }
 
