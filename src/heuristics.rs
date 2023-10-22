@@ -2,6 +2,37 @@ use std::{debug_assert, borrow::Borrow};
 
 use crate::Rom;
 
+pub trait SliceExt {
+	fn get_word(&self, pos: usize) -> Option<u32>;
+}
+
+impl SliceExt for [u8] {
+	fn get_word(&self, pos: usize) -> Option<u32> {
+		let pos_top = pos.checked_add(4).filter(|n| *n <= self.len())?;
+		Some(u32::from_le_bytes([
+			self[pos_top - 4], self[pos_top - 3], self[pos_top - 2], self[pos_top - 1]
+		]))
+	}
+}
+
+#[cfg(test)]
+mod test_slice_ext {
+	use super::SliceExt;
+	use assert_hex::assert_eq_hex;
+
+	#[test]
+	fn get_word() {
+		const SRC: &[u8] = b"murderous".as_slice();
+		assert_eq_hex!(Some(0x6472756d), SRC.get_word(0));
+		assert_eq_hex!(Some(0x65647275), SRC.get_word(1));
+		assert_eq_hex!(Some(0x73756f72), SRC.get_word(5));
+		assert!(SRC.get_word(6).is_none());
+		assert!(SRC.get_word(9).is_none());
+		assert!(SRC.get_word(9999).is_none());
+	}
+}
+
+
 struct WordCursor<'a> {
 	bytes: &'a [u8],
 	cursor_rel: u32,
