@@ -2,6 +2,38 @@ use std::{debug_assert, borrow::Borrow};
 
 use crate::Rom;
 
+#[non_exhaustive]
+pub struct KnownRiscOsVersion {
+	name_high_level: &'static str,
+	name_internal: &'static [u8],
+	name_internal_pos: u32,
+	crc32: u32,
+}
+
+static RISC_OS_311: KnownRiscOsVersion = KnownRiscOsVersion {
+	name_high_level: "RISC OS 3.11",
+	name_internal: b"RISC OS\t\t3.11 (29 Sep 1992)\0",
+	name_internal_pos: 0x498c,
+	crc32: 0x54c0c963,
+};
+
+impl KnownRiscOsVersion {
+	pub fn matches(&self, rom_data: &[u8]) -> bool {
+		let Some(slice_end) = self.name_internal_pos.checked_add(self.name_internal.len() as u32)
+			.filter(|n| *n as usize <= rom_data.len())
+		else { return false };
+
+		if rom_data[self.name_internal_pos as usize .. slice_end as usize] != *self.name_internal {
+			return false;
+		}
+
+		let mut hasher = crc_any::CRCu32::crc32();
+		hasher.digest(rom_data);
+		hasher.get_crc() == self.crc32
+	}
+}
+
+
 pub trait SliceExt {
 	fn get_word(&self, pos: usize) -> Option<u32>;
 }
@@ -87,20 +119,21 @@ impl<'a> WordCursor<'a> {
 
 impl Rom {
 
-	pub(crate) fn find_offset_to(haystack: &[u8], needle: &[u8], offset: u32) -> Option<u32> {
+	pub fn find_offset_to(haystack: &[u8], needle: &[u8], offset: u32) -> Option<u32> {
 		if haystack.len() < 4 { return None; }
 		let target = Self::find(haystack, needle)?;
 		let mut cursor = WordCursor::new_end(&haystack[..(target as usize)]);
 
 		loop {
-			if cursor.current()?.checked_add(offset)? == target {
-				return Some(cursor.pos());
+			let possible_start = cursor.pos().checked_sub(offset)?;
+			if cursor.current().and_then(|cc| possible_start.checked_add(cc)) == Some(target) {
+				return Some(possible_start);
 			}
 			cursor.move_prev();
 		}
 	}
 
-	pub(crate) fn find(mut haystack: &[u8], needle: &[u8]) -> Option<u32> {
+	pub fn find(mut haystack: &[u8], needle: &[u8]) -> Option<u32> {
 		debug_assert!(haystack.len() <= u32::MAX as usize);
 		debug_assert!(needle.len() <= u32::MAX as usize);
 
@@ -151,8 +184,9 @@ mod tests {
 	#[test]
 	fn find_offset_to() {
 		assert_eq!(Rom::find_offset_to(b"\x08\0\0\0ABCDEFGH", b"EFGH", 0), Some(0));
-		assert_eq!(Rom::find_offset_to(b"!!!!\x08\0\0\0EFGH", b"EFGH", 0), Some(4));
-		assert_eq!(Rom::find_offset_to(b"!!!!ZERO\x08\0\0\0EFGH", b"EFGH", 4), Some(8));
+		assert_eq!(Rom::find_offset_to(b"!!!!\x08\0\0\0ABCDEFGH", b"EFGH", 0), Some(4));
+		assert_eq!(Rom::find_offset_to(b"!!!!\x04\0\0\0EFGH", b"EFGH", 0), Some(4));
+		assert_eq!(Rom::find_offset_to(b"!!!!????ZERO\x08\0\0\0EFGH", b"EFGH", 4), Some(8));
 
 		assert_eq!(Rom::find_offset_to(&[
 			b'o', b'f', b'f', b's', b'e', b't', b'!', b'!',
@@ -168,7 +202,7 @@ mod tests {
 			0,0,0,0, // swi table   r24 a2c
 			0,0,0,0, // swi code    r28 a30
 			b'M', b'o', b'd', b'u', b'l', b'e', 0 // r2c a34
-		], b"Module\0", 8), Some(0x18));
+		], b"Module\0", 0x10), Some(8));
 	}
 
 	#[test]

@@ -1,19 +1,24 @@
 #![cfg_attr(debug_assertions, allow(dead_code))]
 
 mod heuristics;
+pub use heuristics::SliceExt;
 
 use std::{
 	cell::Cell,
+	error::Error,
 	fmt,
 	io::{self, Read},
 	num::NonZeroU32,
+	ops::{Range, Deref},
 	path::Path,
+	iter::FusedIterator,
 };
 
 use crc_any::CRCu32;
 
 
-type Offset = Cell<Option<NonZeroU32>>;
+type Offset = Option<NonZeroU32>;
+type CachedOffset = Cell<Option<Offset>>;
 
 #[derive(Debug)]
 pub enum RomLoadError {
@@ -30,6 +35,15 @@ pub enum RomDecodeError {
 impl From<io::Error> for RomLoadError {
 	fn from(value: io::Error) -> Self {
 		Self::Io(value)
+	}
+}
+
+impl Error for RomLoadError {
+	fn source(&self) -> Option<&(dyn Error + 'static)> {
+		match self {
+			RomLoadError::Io(e) => Some(e),
+			_ => None,
+		}
 	}
 }
 
@@ -55,13 +69,16 @@ impl fmt::Display for RomDecodeError {
 	}
 }
 
+impl Error for RomDecodeError { }
+
 
 pub struct Rom {
 	data: Box<[u8]>,
 	crc32: u32,
 
-	module_chain_start: Offset,
-	version_name_str: Offset,
+	kernel_start: CachedOffset,
+	module_chain_start: CachedOffset,
+	version_name_str: CachedOffset,
 }
 
 impl Rom {
@@ -91,8 +108,79 @@ impl Rom {
 			data,
 			crc32: crc.get_crc(),
 
-			module_chain_start: Offset::default(),
-			version_name_str: Offset::default(),
+			kernel_start: CachedOffset::default(),
+			module_chain_start: CachedOffset::default(),
+			version_name_str: CachedOffset::default(),
 		})
 	}
+
+	fn in_range(&self) -> impl Fn(&u32) -> bool {
+		let len = self.data.len() as u32;
+		move |n| *n < len
+	}
+
+	fn recell_offset<F: FnOnce() -> Option<u32>>(&self, cell: &CachedOffset, find: F) -> Offset {
+		if let Some(cached) = cell.get() { return cached; }
+
+		let result = find().and_then(NonZeroU32::new);
+		cell.set(Some(result));
+		result
+	}
+
+	pub fn kernel_start(&self) -> Offset {
+		self.recell_offset(&self.kernel_start, || Self::find(self.data.as_ref(), b"MODULE#\0")
+			.and_then(|p| p.checked_add(8).filter(self.in_range())
+				))
+	}
+
+	pub fn module_chain_start(&self) -> Offset {
+		self.recell_offset(&self.module_chain_start, || Self::find_offset_to(
+			self.data.as_ref(), b"UtilityModule\0", 0x10)
+			.and_then(|n| n.checked_sub(4)))
+	}
+
+	pub fn module_chain(&self) -> ModuleChain<'_> {
+		ModuleChain::new(self, self.module_chain_start())
+	}
 }
+
+impl Deref for Rom {
+	type Target = [u8];
+
+	fn deref(&self) -> &Self::Target {
+		self.data.as_ref()
+	}
+}
+
+
+pub struct ModuleChain<'a> {
+	rom: &'a Rom,
+	pos: u32,
+}
+
+impl<'a> ModuleChain<'a> {
+	fn new(rom: &'a Rom, start: Offset) -> Self {
+		ModuleChain { rom, pos: start.map(NonZeroU32::get).unwrap_or(u32::MAX) }
+	}
+}
+
+impl<'a> Iterator for ModuleChain<'a> {
+	type Item = Range<u32>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		let (module_start, module_len) = (
+			self.pos.checked_add(4)?, self.rom.data.get_word(self.pos as usize)?
+		);
+
+		if module_len > 0 {
+			self.pos = self.pos.checked_add(module_len).filter(self.rom.in_range()).unwrap_or(u32::MAX);
+		} else {
+			self.pos = u32::MAX;
+			return None;
+		}
+		Some(module_start .. module_start.saturating_add(module_len))
+	}
+}
+
+impl<'a> FusedIterator for ModuleChain<'a> { }
+
