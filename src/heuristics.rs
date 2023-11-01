@@ -81,7 +81,7 @@ impl Rom {
 	pub fn find_offset_to(haystack: &Slice32, needle: &Slice32, offset: u32) -> Option<u32> {
 		if haystack.len() < 4 { return None; }
 		let target = Self::find(haystack, needle)?;
-		let mut cursor = WordCursor::new_end(haystack.subslice(0..target).ok()?);
+		let mut cursor = WordCursor::new_end(haystack.subslice(0..target)?);
 
 		loop {
 			let possible_start = cursor.pos().checked_sub(offset)?;
@@ -108,7 +108,7 @@ impl Rom {
 			}
 
 			// first byte matches, compare remaining
-			if haystack.subslice(hs_range.clone()) == Ok(needle_rem) {
+			if haystack.subslice(hs_range.clone()) == Some(needle_rem) {
 				// hs_range is relative to the subslice, not the original parameter
 				return Some(hs_range.start as u32 - 1 + hs_sub_start);
 			}

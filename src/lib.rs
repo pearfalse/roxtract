@@ -172,7 +172,7 @@ impl<'a> Iterator for ModuleChain<'a> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		let (module_start, module_len) = (
-			self.pos.checked_add(4)?, self.rom.data.read_word(self.pos).ok()?
+			self.pos.checked_add(4)?, self.rom.data.read_word(self.pos)?
 		);
 
 		if module_len > 0 {

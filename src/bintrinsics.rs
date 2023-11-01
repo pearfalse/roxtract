@@ -1,5 +1,4 @@
 use core::{
-	hash::Hash,
 	iter::ExactSizeIterator,
 	mem::transmute,
 	ops::Range,
@@ -43,25 +42,25 @@ impl Slice32 {
 		}
 	}
 
-	pub fn read_word(&self, idx: u32) -> Result<u32, OutOfRangeError> {
+	pub fn read_word(&self, idx: u32) -> Option<u32> {
 		if idx.saturating_add(4) > self.len() {
-			return Err(OutOfRangeError);
+			return None;
 		}
 
-		Ok(unsafe {
+		Some(unsafe {
 			// SAFETY: we know the slice is big enough, and we don't require u32 alignment
 			self.0.as_ptr().add(idx as usize).cast::<u32>().read_unaligned()
 		})
 	}
 
-	pub fn subslice(&self, range: Range<u32>) -> Result<&Self, OutOfRangeError> {
+	pub fn subslice(&self, range: Range<u32>) -> Option<&Self> {
 		assert!(range.end >= range.start);
 
 		if range.start as usize > self.0.len() || range.end as usize > self.0.len() {
-			return Err(OutOfRangeError);
+			return None;
 		}
 
-		Ok(unsafe {
+		Some(unsafe {
 			// SAFETY: we've checked that the given range is within `self`
 			transmute(from_raw_parts(
 				self.0.as_ptr().add(range.start as usize),
@@ -71,7 +70,7 @@ impl Slice32 {
 	}
 
 	#[inline]
-	pub fn subslice_from(&self, new_start: u32) -> Result<&Self, OutOfRangeError> {
+	pub fn subslice_from(&self, new_start: u32) -> Option<&Self> {
 		self.subslice(new_start..(self.len()))
 	}
 
@@ -93,8 +92,6 @@ impl AsRef<[u8]> for Slice32 {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct OutOfRangeError;
 
 #[cfg(test)]
 mod uat {
@@ -111,14 +108,14 @@ mod uat {
 			0xff, 0xea, 0x1d, 0x0d, 0x60,
 		]) };
 
-		assert_eq!(Ok(0x19), DATA.read_word(8));
-		assert_eq!(Err(OutOfRangeError), DATA.read_word(1<<20));
+		assert_eq!(Some(0x19), DATA.read_word(8));
+		assert_eq!(None, DATA.read_word(1<<20));
 
 		// first, a straightforward comparison
-		assert_eq!(Ok(&DATA.as_ref()[..6]), DATA.subslice(0..6).map(AsRef::as_ref));
+		assert_eq!(Some(&DATA.as_ref()[..6]), DATA.subslice(0..6).map(AsRef::as_ref));
 		// use pointers to suppress value comparison, to more rigorously test the result
 		assert_eq!(
-			Ok(&DATA.as_ref()[..6] as *const [u8]),
+			Some(&DATA.as_ref()[..6] as *const [u8]),
 			DATA.subslice(0..6).map(|s| s as *const Slice32 as *const [u8]),
 		);
 	}
