@@ -3,6 +3,8 @@
 mod heuristics;
 pub use heuristics::SliceExt;
 
+mod bintrinsics;
+
 use std::{
 	cell::Cell,
 	error::Error,
