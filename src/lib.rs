@@ -1,6 +1,7 @@
 #![cfg_attr(debug_assertions, allow(dead_code))]
 
 mod heuristics;
+use bintrinsics::Slice32;
 pub use heuristics::SliceExt;
 
 mod bintrinsics;
@@ -75,7 +76,7 @@ impl Error for RomDecodeError { }
 
 
 pub struct Rom {
-	data: Box<[u8]>,
+	data: Box<Slice32>,
 	crc32: u32,
 
 	kernel_start: CachedOffset,
@@ -107,7 +108,7 @@ impl Rom {
 		crc.digest(&data);
 
 		Ok(Rom {
-			data,
+			data: Slice32::new_boxed(data).unwrap(),
 			crc32: crc.get_crc(),
 
 			kernel_start: CachedOffset::default(),
@@ -130,14 +131,15 @@ impl Rom {
 	}
 
 	pub fn kernel_start(&self) -> Offset {
-		self.recell_offset(&self.kernel_start, || Self::find(self.data.as_ref(), b"MODULE#\0")
+		self.recell_offset(&self.kernel_start,
+			|| Self::find(self.data.as_ref(), Slice32::new(b"MODULE#\0").unwrap())
 			.and_then(|p| p.checked_add(8).filter(self.in_range())
 				))
 	}
 
 	pub fn module_chain_start(&self) -> Offset {
 		self.recell_offset(&self.module_chain_start, || Self::find_offset_to(
-			self.data.as_ref(), b"UtilityModule\0", 0x10)
+			self.data.as_ref(), Slice32::new(b"UtilityModule\0").unwrap(), 0x10)
 			.and_then(|n| n.checked_sub(4)))
 	}
 
@@ -147,7 +149,7 @@ impl Rom {
 }
 
 impl Deref for Rom {
-	type Target = [u8];
+	type Target = Slice32;
 
 	fn deref(&self) -> &Self::Target {
 		self.data.as_ref()
@@ -175,7 +177,9 @@ impl<'a> Iterator for ModuleChain<'a> {
 		);
 
 		if module_len > 0 {
-			self.pos = self.pos.checked_add(module_len).filter(self.rom.in_range()).unwrap_or(u32::MAX);
+			self.pos = self.pos.checked_add(module_len)
+				.filter(self.rom.in_range())
+				.unwrap_or(u32::MAX);
 		} else {
 			self.pos = u32::MAX;
 			return None;

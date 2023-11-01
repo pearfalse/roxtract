@@ -1,6 +1,6 @@
-use std::{debug_assert, borrow::Borrow, ops::Range};
+use std::ops::Range;
 
-use crate::Rom;
+use crate::{Rom, bintrinsics::Slice32};
 
 #[non_exhaustive]
 pub struct KnownRiscOsVersion {
@@ -60,6 +60,16 @@ impl SliceExt for [u8] {
 	}
 }
 
+impl SliceExt for Slice32 {
+	fn get_word(&self, pos: usize) -> Option<u32> {
+		self.read_word(u32::try_from(pos).ok()?).ok()
+	}
+
+	fn get_all(&self, range: Range<u32>) -> Option<&[u8]> {
+		self.subslice(range).ok().map(AsRef::as_ref)
+	}
+}
+
 #[cfg(test)]
 mod test_slice_ext {
 	use super::SliceExt;
@@ -88,27 +98,21 @@ mod test_slice_ext {
 
 
 struct WordCursor<'a> {
-	bytes: &'a [u8],
+	bytes: &'a Slice32,
 	cursor_rel: u32,
 }
 
 impl<'a> WordCursor<'a> {
-	pub fn new_start<T: Borrow<[u8]> + ?Sized>(bytes: &T) -> Self {
-		Self::new(bytes.borrow(),|_| 0)
+	pub fn new_start(bytes: &'a Slice32) -> Self {
+		Self::new(bytes, |_| 0)
 	}
 
-	pub fn new_end<T: Borrow<[u8]> + ?Sized>(bytes: &T) -> Self {
-		Self::new(bytes.borrow(),|b| (b.len() as u32).saturating_sub(4))
+	pub fn new_end(bytes: &'a Slice32) -> Self {
+		Self::new(bytes, |b| b.len().saturating_sub(4))
 	}
 
-	fn new(bytes: &[u8], make_start: impl FnOnce(&[u8]) -> u32) -> Self {
-		let bytes: &[u8] = bytes.borrow();
-		assert!(bytes.len() <= i32::MAX as usize);
-
-		let bytes_words_only = unsafe {
-			// SAFETY: this can only reduce the size of `bytes`
-			core::slice::from_raw_parts(bytes.as_ptr(), bytes.len() & !3)
-		};
+	fn new(bytes: &'a Slice32, make_start: impl FnOnce(&'a Slice32) -> u32) -> Self {
+		let bytes_words_only = bytes.subslice(0..(bytes.len() & !3)).unwrap();
 
 		Self {
 			bytes: bytes_words_only,
@@ -118,12 +122,12 @@ impl<'a> WordCursor<'a> {
 
 	pub fn current(&self) -> Option<u32> {
 		// ensure we have four bytes in range
-		if !matches!(self.cursor_rel.checked_add(4), Some(n) if n as usize <= self.bytes.len()) {
+		if !matches!(self.cursor_rel.checked_add(4), Some(n) if n <= self.bytes.len()) {
 			return None; // index if out of range
 		}
 
 		Some(unsafe {
-			let ptr = self.bytes.as_ptr().add(self.cursor_rel as usize).cast::<u32>();
+			let ptr = self.bytes.as_ref().as_ptr().add(self.cursor_rel as usize).cast::<u32>();
 			core::ptr::read_unaligned(ptr as *const u32)
 		})
 	}
@@ -140,11 +144,10 @@ impl<'a> WordCursor<'a> {
 }
 
 impl Rom {
-
-	pub fn find_offset_to(haystack: &[u8], needle: &[u8], offset: u32) -> Option<u32> {
+	pub fn find_offset_to(haystack: &Slice32, needle: &Slice32, offset: u32) -> Option<u32> {
 		if haystack.len() < 4 { return None; }
 		let target = Self::find(haystack, needle)?;
-		let mut cursor = WordCursor::new_end(&haystack[..(target as usize)]);
+		let mut cursor = WordCursor::new_end(haystack.subslice(0..target).ok()?);
 
 		loop {
 			let possible_start = cursor.pos().checked_sub(offset)?;
@@ -155,16 +158,14 @@ impl Rom {
 		}
 	}
 
-	pub fn find(mut haystack: &[u8], needle: &[u8]) -> Option<u32> {
-		debug_assert!(haystack.len() <= u32::MAX as usize);
-		debug_assert!(needle.len() <= u32::MAX as usize);
-
+	pub fn find(mut haystack: &Slice32, needle: &Slice32) -> Option<u32> {
 		if haystack.is_empty() { return None; }
 		let (&needle_first, needle_rem) = needle.split_first()?;
 
 		let mut hs_sub_start = 0u32;
 		loop {
-			let start = haystack.iter().copied().position(move |n| n == needle_first)?;
+			let start = haystack.as_ref().iter().copied().position(move |n| n == needle_first)?
+				as u32;
 
 			let hs_range = (start + 1) .. (start + needle.len());
 			if hs_range.end > haystack.len() {
@@ -173,13 +174,13 @@ impl Rom {
 			}
 
 			// first byte matches, compare remaining
-			if &haystack[hs_range.clone()] == needle_rem {
+			if haystack.subslice(hs_range.clone()) == Ok(needle_rem) {
 				// hs_range is relative to the subslice, not the original parameter
 				return Some(hs_range.start as u32 - 1 + hs_sub_start);
 			}
 
-			haystack = &haystack[hs_range.start ..];
-			hs_sub_start += hs_range.start as u32;
+			haystack = haystack.subslice_from(hs_range.start).unwrap();
+			hs_sub_start += hs_range.start;
 		}
 	}
 }
@@ -188,29 +189,31 @@ impl Rom {
 mod tests {
 	use super::*;
 
+	fn s(src: &[u8]) -> &Slice32 { Slice32::new(src).unwrap() }
+
 	#[test]
 	fn find() {
-		assert_eq!(Rom::find(b"abcdef", b"abc"), Some(0));
-		assert_eq!(Rom::find(b"abc", b"abc"), Some(0));
-		assert_eq!(Rom::find(b"abcdef", b"bc"), Some(1));
-		assert_eq!(Rom::find(b"aabc", b"abc"), Some(1));
-		assert_eq!(Rom::find(b"ababc", b"abc"), Some(2));
-		assert_eq!(Rom::find(b"abac", b"abc"), None);
-		assert_eq!(Rom::find(b"cbabc", b"abc"), Some(2));
-		assert_eq!(Rom::find(b"bac", b"a"), Some(1));
+		assert_eq!(Rom::find(s(b"abcdef"), s(b"abc")), Some(0));
+		assert_eq!(Rom::find(s(b"abc"), s(b"abc")), Some(0));
+		assert_eq!(Rom::find(s(b"abcdef"), s(b"bc")), Some(1));
+		assert_eq!(Rom::find(s(b"aabc"), s(b"abc")), Some(1));
+		assert_eq!(Rom::find(s(b"ababc"), s(b"abc")), Some(2));
+		assert_eq!(Rom::find(s(b"abac"), s(b"abc")), None);
+		assert_eq!(Rom::find(s(b"cbabc"), s(b"abc")), Some(2));
+		assert_eq!(Rom::find(s(b"bac"), s(b"a")), Some(1));
 
-		assert_eq!(Rom::find(b"", b"empty haystack"), None);
-		assert_eq!(Rom::find(b"empty needle", b""), None);
+		assert_eq!(Rom::find(s(b""), s(b"empty haystack")), None);
+		assert_eq!(Rom::find(s(b"empty needle"), s(b"")), None);
 	}
 
 	#[test]
 	fn find_offset_to() {
-		assert_eq!(Rom::find_offset_to(b"\x08\0\0\0ABCDEFGH", b"EFGH", 0), Some(0));
-		assert_eq!(Rom::find_offset_to(b"!!!!\x08\0\0\0ABCDEFGH", b"EFGH", 0), Some(4));
-		assert_eq!(Rom::find_offset_to(b"!!!!\x04\0\0\0EFGH", b"EFGH", 0), Some(4));
-		assert_eq!(Rom::find_offset_to(b"!!!!????ZERO\x08\0\0\0EFGH", b"EFGH", 4), Some(8));
+		assert_eq!(Rom::find_offset_to(s(b"\x08\0\0\0ABCDEFGH"), s(b"EFGH"), 0), Some(0));
+		assert_eq!(Rom::find_offset_to(s(b"!!!!\x08\0\0\0ABCDEFGH"), s(b"EFGH"), 0), Some(4));
+		assert_eq!(Rom::find_offset_to(s(b"!!!!\x04\0\0\0EFGH"), s(b"EFGH"), 0), Some(4));
+		assert_eq!(Rom::find_offset_to(s(b"!!!!????ZERO\x08\0\0\0EFGH"), s(b"EFGH"), 4), Some(8));
 
-		assert_eq!(Rom::find_offset_to(&[
+		assert_eq!(Rom::find_offset_to(s(&[
 			b'o', b'f', b'f', b's', b'e', b't', b'!', b'!',
 			0,0,0,0, // run         r00 a08
 			0,0,0,0, // init        r04 a0c
@@ -224,7 +227,7 @@ mod tests {
 			0,0,0,0, // swi table   r24 a2c
 			0,0,0,0, // swi code    r28 a30
 			b'M', b'o', b'd', b'u', b'l', b'e', 0 // r2c a34
-		], b"Module\0", 0x10), Some(8));
+		]), s(b"Module\0"), 0x10), Some(8));
 	}
 
 	#[test]
@@ -240,6 +243,6 @@ mod tests {
 		};
 		data.copy_from_slice(DATA);
 		assert_ne!(data.as_ptr().addr() & 3, 0);
-		assert_eq!(Rom::find_offset_to(data, b"HELLO\0", 0), Some(0));
+		assert_eq!(Rom::find_offset_to(s(data), s(b"HELLO\0"), 0), Some(0));
 	}
 }

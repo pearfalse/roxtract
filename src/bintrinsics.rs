@@ -7,15 +7,27 @@ use core::{
 };
 
 #[repr(transparent)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Slice32([u8]);
 
 impl Slice32 {
 	pub fn len(&self) -> u32 { self.0.len() as u32 }
 
+	const SIZE_LIMIT: usize = i32::MAX as usize;
+
 	pub const fn new(src: &[u8]) -> Option<&Slice32> {
-		if src.len() > u32::MAX as usize { return None; }
+		if src.len() > Self::SIZE_LIMIT { return None; }
 		Some(unsafe {
 			// SAFETY: we're casting to a transparent wrapper type
+			transmute(src)
+		})
+	}
+
+	pub fn new_boxed(src: Box<[u8]>) -> Result<Box<Slice32>, Box<[u8]>> {
+		if src.len() > Self::SIZE_LIMIT { return Err(src); }
+
+		Ok(unsafe {
+			// SAFETY: we're casting to a transparent wrapper type, via Box
 			transmute(src)
 		})
 	}
@@ -61,6 +73,17 @@ impl Slice32 {
 	#[inline]
 	pub fn subslice_from(&self, new_start: u32) -> Result<&Self, OutOfRangeError> {
 		self.subslice(new_start..(self.len()))
+	}
+
+	#[inline]
+	pub const fn is_empty(&self) -> bool { self.0.is_empty() }
+
+	#[inline]
+	pub fn split_first(&self) -> Option<(&u8, &Slice32)> {
+		self.0.split_first().map(|(f, rem)| (f, unsafe {
+			// SAFETY: `rem` is a 1-truncated version of `self` and meets length criterion
+			Slice32::new_unchecked(rem)
+		}))
 	}
 }
 
