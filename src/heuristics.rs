@@ -1,5 +1,3 @@
-use std::ops::Range;
-
 use crate::{Rom, bintrinsics::Slice32};
 
 #[non_exhaustive]
@@ -32,70 +30,6 @@ impl KnownRiscOsVersion {
 		hasher.get_crc() == self.crc32
 	}
 }
-
-
-pub trait SliceExt {
-	fn get_word(&self, pos: usize) -> Option<u32>;
-	fn get_all(&self, range: Range<u32>) -> Option<&[u8]>;
-}
-
-impl SliceExt for [u8] {
-	fn get_word(&self, pos: usize) -> Option<u32> {
-		let pos_top = pos.checked_add(4).filter(|n| *n <= self.len())?;
-		Some(u32::from_le_bytes([
-			self[pos_top - 4], self[pos_top - 3], self[pos_top - 2], self[pos_top - 1]
-		]))
-	}
-
-	fn get_all(&self, range: Range<u32>) -> Option<&[u8]> {
-		let in_range = {
-			let limit = self.len();
-			move |n: &u32| (*n as usize) <= limit
-		};
-
-		Some(range.start).filter(in_range)?;
-		Some(range.end).filter(in_range)?;
-
-		Some(&self[(range.start as usize)..(range.end as usize)])
-	}
-}
-
-impl SliceExt for Slice32 {
-	fn get_word(&self, pos: usize) -> Option<u32> {
-		self.read_word(u32::try_from(pos).ok()?).ok()
-	}
-
-	fn get_all(&self, range: Range<u32>) -> Option<&[u8]> {
-		self.subslice(range).ok().map(AsRef::as_ref)
-	}
-}
-
-#[cfg(test)]
-mod test_slice_ext {
-	use super::SliceExt;
-	use assert_hex::assert_eq_hex;
-
-	#[test]
-	fn get_word() {
-		const SRC: &[u8] = b"murderous".as_slice();
-		assert_eq_hex!(Some(0x6472756d), SRC.get_word(0));
-		assert_eq_hex!(Some(0x65647275), SRC.get_word(1));
-		assert_eq_hex!(Some(0x73756f72), SRC.get_word(5));
-		assert!(SRC.get_word(6).is_none());
-		assert!(SRC.get_word(9).is_none());
-		assert!(SRC.get_word(9999).is_none());
-	}
-
-	#[test]
-	fn get_all() {
-		const SRC: &[u8] = b"stone building".as_slice();
-		assert_eq!(Some(&b"stone"[..]), SRC.get_all(0..5));
-		assert_eq!(Some(&b"building"[..]), SRC.get_all(6..14));
-		assert_eq!(None, SRC.get_all(6..15));
-		assert_eq!(None, SRC.get_all(20..21));
-	}
-}
-
 
 struct WordCursor<'a> {
 	bytes: &'a Slice32,

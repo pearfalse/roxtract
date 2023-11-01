@@ -2,7 +2,6 @@
 
 mod heuristics;
 use bintrinsics::Slice32;
-pub use heuristics::SliceExt;
 
 mod bintrinsics;
 
@@ -173,7 +172,7 @@ impl<'a> Iterator for ModuleChain<'a> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		let (module_start, module_len) = (
-			self.pos.checked_add(4)?, self.rom.data.get_word(self.pos as usize)?
+			self.pos.checked_add(4)?, self.rom.data.read_word(self.pos).ok()?
 		);
 
 		if module_len > 0 {
