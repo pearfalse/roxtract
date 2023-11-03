@@ -42,6 +42,11 @@ impl Slice32 {
 		}
 	}
 
+	#[inline]
+	pub fn read_byte(&self, idx: u32) -> Option<u8> {
+		self.0.get(idx as usize).copied()
+	}
+
 	pub fn read_word(&self, idx: u32) -> Option<u32> {
 		if idx.saturating_add(4) > self.len() {
 			return None;
@@ -108,6 +113,7 @@ mod uat {
 			0xff, 0xea, 0x1d, 0x0d, 0x60,
 		]) };
 
+		assert_eq!(Some(b'e'), DATA.read_byte(1));
 		assert_eq!(Some(0x19), DATA.read_word(8));
 		assert_eq!(None, DATA.read_word(1<<20));
 
