@@ -52,14 +52,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let mut buf = String::with_capacity(40);
 	for module in rom.module_chain() {
 		buf.clear();
-		let mod_title_pos = module.start.checked_add(0x10).and_then(|tpos| rom.read_word(tpos as usize))
+		let mod_title_pos = module.start.checked_add(0x10).and_then(|tpos| rom.read_word(tpos))
 			.and_then(|rel| module.start.checked_add(rel))
 			.ok_or(RomDecodeError::ModuleChainBroken)?;
-		let mut i = mod_title_pos as usize;
+		let mut i = mod_title_pos;
 		loop {
 			use fmt::Write;
 
-			match rom.get(i).copied().ok_or(RomDecodeError::ModuleChainBroken)? {
+			match rom.read_byte(i).ok_or(RomDecodeError::ModuleChainBroken)? {
 				0 | b'\t' => break,
 				n => write!(&mut buf, "{}", (n as char).escape_debug()),
 			};
