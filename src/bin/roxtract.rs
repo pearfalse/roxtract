@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 			match rom.read_byte(i).ok_or(RomDecodeError::ModuleChainBroken)? {
 				0 | b'\t' => break,
-				n => write!(&mut buf, "{}", (n as char).escape_debug()),
+				n => write!(&mut buf, "{}", (n as char).escape_debug()).ok(),
 			};
 			i += 1;
 		}
@@ -93,12 +93,12 @@ impl<T: fmt::UpperHex + Copy> fmt::UpperHex for HexOr<T> {
 	}
 }
 
-trait HexOrExt: Copy {
+trait HexOrExt {
 	type Inner;
 	fn or_print(self, s: &'static str) -> HexOr<Self::Inner>;
 }
 
-impl<T: fmt::LowerHex + Copy> HexOrExt for Option<T> {
+impl<T: fmt::LowerHex> HexOrExt for Option<T> {
 	type Inner = T;
 	fn or_print(self, s: &'static str) -> HexOr<T> {
 		HexOr(self, s)
