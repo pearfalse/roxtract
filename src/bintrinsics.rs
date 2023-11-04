@@ -89,6 +89,12 @@ impl Slice32 {
 			Slice32::new_unchecked(rem)
 		}))
 	}
+
+	pub fn cstr(&self) -> Option<&Self> {
+		let mut n = 0;
+		while self.read_byte(n)? != 0 { n += 1; }
+		Some(self.subslice(0..n).unwrap())
+	}
 }
 
 impl AsRef<[u8]> for Slice32 {
@@ -124,5 +130,8 @@ mod uat {
 			Some(&DATA.as_ref()[..6] as *const [u8]),
 			DATA.subslice(0..6).map(|s| s as *const Slice32 as *const [u8]),
 		);
+
+		// cstring
+		assert_eq!(Some(&DATA.as_ref()[..6]), DATA.cstr().map(AsRef::as_ref));
 	}
 }
