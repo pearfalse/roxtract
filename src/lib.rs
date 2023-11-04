@@ -19,7 +19,8 @@ use std::{
 use crc_any::CRCu32;
 
 
-type Offset = Option<NonZeroU32>;
+type Offset = NonZeroU32;
+// NonZeroU32::MAX represents 'cached find failure'
 type CachedOffset = Cell<Option<Offset>>;
 
 #[derive(Debug)]
@@ -121,22 +122,25 @@ impl Rom {
 		move |n| *n < len
 	}
 
-	fn recell_offset<F: FnOnce() -> Option<u32>>(&self, cell: &CachedOffset, find: F) -> Offset {
-		if let Some(cached) = cell.get() { return cached; }
+	fn recell_offset<F: FnOnce() -> Option<u32>>(&self, cell: &CachedOffset, find: F)
+	-> Option<Offset> {
+		if let cached @ Some(_) = cell.get() {
+			return cached.filter(|n| *n < NonZeroU32::MAX);
+		}
 
 		let result = find().and_then(NonZeroU32::new);
-		cell.set(Some(result));
+		cell.set(Some(result.unwrap_or(NonZeroU32::MAX)));
 		result
 	}
 
-	pub fn kernel_start(&self) -> Offset {
+	pub fn kernel_start(&self) -> Option<Offset> {
 		self.recell_offset(&self.kernel_start,
 			|| Self::find(self.data.as_ref(), Slice32::new(b"MODULE#\0").unwrap())
 			.and_then(|p| p.checked_add(8).filter(self.in_range())
 				))
 	}
 
-	pub fn module_chain_start(&self) -> Offset {
+	pub fn module_chain_start(&self) -> Option<Offset> {
 		self.recell_offset(&self.module_chain_start, || Self::find_offset_to(
 			self.data.as_ref(), Slice32::new(b"UtilityModule\0").unwrap(), 0x10)
 			.and_then(|n| n.checked_sub(4)))
@@ -162,7 +166,7 @@ pub struct ModuleChain<'a> {
 }
 
 impl<'a> ModuleChain<'a> {
-	fn new(rom: &'a Rom, start: Offset) -> Self {
+	fn new(rom: &'a Rom, start: Option<Offset>) -> Self {
 		ModuleChain { rom, pos: start.map(NonZeroU32::get).unwrap_or(u32::MAX) }
 	}
 }
