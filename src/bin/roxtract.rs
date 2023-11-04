@@ -49,26 +49,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 	println!("Kernel starts at {:04x}", rom.kernel_start().or_print("[not found]"));
 	println!("Module chain starts at {:04x}", rom.module_chain_start().or_print("[UtilityModule not found]"));
 
-	let mut buf = String::with_capacity(40);
 	for module in rom.module_chain() {
-		print!("{:06x} -> {:06x}: ", module.start, module.end);
-
-		buf.clear();
-		let mod_title_pos = module.start.checked_add(0x10).and_then(|tpos| rom.read_word(tpos))
-			.and_then(|rel| module.start.checked_add(rel))
-			.ok_or(RomDecodeError::ModuleChainBroken)?;
-		let mut i = mod_title_pos;
-		loop {
-			use fmt::Write;
-
-			match rom.read_byte(i).ok_or(RomDecodeError::ModuleChainBroken)? {
-				0 | b'\t' => break,
-				n => write!(&mut buf, "{}", (n as char).escape_debug()).ok(),
-			};
-			i += 1;
+		print!("module: ");
+		for ch in module.title()?.as_ref() {
+			print!("{}", (*ch as char).escape_default())
 		}
-
-		print!("module: {}", &buf);
 		println!();
 	}
 

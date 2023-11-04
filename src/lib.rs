@@ -11,7 +11,7 @@ use std::{
 	fmt,
 	io::{self, Read},
 	num::NonZeroU32,
-	ops::{Range, Deref},
+	ops::Deref,
 	path::Path,
 	iter::FusedIterator,
 };
@@ -33,6 +33,7 @@ pub enum RomLoadError {
 pub enum RomDecodeError {
 	UtilityModuleNotFound,
 	ModuleChainBroken,
+	UnterminatedCstr,
 }
 
 impl From<io::Error> for RomLoadError {
@@ -68,6 +69,8 @@ impl fmt::Display for RomDecodeError {
 				=> f.write_str("Could not find UtilityModule in ROM (is file corrupted?)"),
 			RomDecodeError::ModuleChainBroken
 				=> f.write_str("Module chain appears to be broken"),
+			RomDecodeError::UnterminatedCstr
+				=> f.write_str("C-string terminator could not be located"),
 		}
 	}
 }
@@ -172,7 +175,7 @@ impl<'a> ModuleChain<'a> {
 }
 
 impl<'a> Iterator for ModuleChain<'a> {
-	type Item = Range<u32>;
+	type Item = Module<'a>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		let (module_start, module_len) = (
@@ -189,9 +192,23 @@ impl<'a> Iterator for ModuleChain<'a> {
 		}
 
 		// sub 4 to remove chain length word (`module_len` includes this)
-		Some(module_start .. module_start.checked_sub(4)?.saturating_add(module_len))
+		let r = module_start .. module_start.checked_sub(4)?.saturating_add(module_len);
+		Some(Module { bytes: self.rom.data.subslice(r)? })
 	}
 }
 
 impl<'a> FusedIterator for ModuleChain<'a> { }
+
+pub struct Module<'a> {
+	bytes: &'a Slice32,
+}
+
+impl<'a> Module<'a> {
+	pub fn title(&self) -> Result<&Slice32, RomDecodeError> {
+		self.bytes.read_word(0x10) // get title offset
+			.and_then(|o| self.bytes.subslice_from(o)) // shift slice start to title start
+			.and_then(Slice32::cstr) // reduce to cstr
+			.ok_or(RomDecodeError::UnterminatedCstr)
+	}
+}
 

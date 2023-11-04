@@ -133,5 +133,6 @@ mod uat {
 
 		// cstring
 		assert_eq!(Some(&DATA.as_ref()[..6]), DATA.cstr().map(AsRef::as_ref));
+		assert_eq!(Some(0), DATA.subslice_from(6).and_then(Slice32::cstr).map(Slice32::len));
 	}
 }
