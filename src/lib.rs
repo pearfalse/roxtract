@@ -183,7 +183,9 @@ impl<'a> Iterator for ModuleChain<'a> {
 			self.pos = u32::MAX;
 			return None;
 		}
-		Some(module_start .. module_start.saturating_add(module_len))
+
+		// sub 4 to remove chain length word (`module_len` includes this)
+		Some(module_start .. module_start.checked_sub(4)?.saturating_add(module_len))
 	}
 }
 

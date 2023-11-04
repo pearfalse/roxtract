@@ -51,6 +51,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 	let mut buf = String::with_capacity(40);
 	for module in rom.module_chain() {
+		print!("{:06x} -> {:06x}: ", module.start, module.end);
+
 		buf.clear();
 		let mod_title_pos = module.start.checked_add(0x10).and_then(|tpos| rom.read_word(tpos))
 			.and_then(|rel| module.start.checked_add(rel))
