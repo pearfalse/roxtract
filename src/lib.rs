@@ -1,9 +1,9 @@
 #![cfg_attr(debug_assertions, allow(dead_code))]
 
 mod heuristics;
-use bintrinsics::Slice32;
 
 mod bintrinsics;
+pub use bintrinsics::Slice32;
 
 use std::{
 	cell::Cell,
@@ -29,7 +29,7 @@ pub enum RomLoadError {
 	RomInvalidSize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum RomDecodeError {
 	UtilityModuleNotFound,
 	ModuleChainBroken,
@@ -210,5 +210,8 @@ impl<'a> Module<'a> {
 			.and_then(Slice32::cstr) // reduce to cstr
 			.ok_or(RomDecodeError::UnterminatedCstr)
 	}
+
+	#[inline]
+	pub const fn data(&self) -> &Slice32 { self.bytes }
 }
 
