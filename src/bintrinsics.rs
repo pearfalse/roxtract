@@ -83,6 +83,14 @@ impl Slice32 {
 	pub const fn is_empty(&self) -> bool { self.0.is_empty() }
 
 	#[inline]
+	pub const fn first(&self) -> Option<u8> {
+		match self.0.first() {
+			Some(n) => Some(*n),
+			None => None,
+		}
+	}
+
+	#[inline]
 	pub fn split_first(&self) -> Option<(&u8, &Slice32)> {
 		self.0.split_first().map(|(f, rem)| (f, unsafe {
 			// SAFETY: `rem` is a 1-truncated version of `self` and meets length criterion
