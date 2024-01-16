@@ -193,7 +193,8 @@ impl<'a> Iterator for ModuleChain<'a> {
 
 		// sub 4 to remove chain length word (`module_len` includes this)
 		let r = module_start .. module_start.checked_sub(4)?.saturating_add(module_len);
-		Some(Module { bytes: self.rom.data.subslice(r)? })
+		let offset = r.start;
+		Some(Module { bytes: self.rom.data.subslice(r)?, offset })
 	}
 }
 
@@ -201,6 +202,7 @@ impl<'a> FusedIterator for ModuleChain<'a> { }
 
 pub struct Module<'a> {
 	bytes: &'a Slice32,
+	offset: u32,
 }
 
 impl<'a> Module<'a> {
@@ -213,5 +215,8 @@ impl<'a> Module<'a> {
 
 	#[inline]
 	pub const fn data(&self) -> &Slice32 { self.bytes }
+
+	#[inline]
+	pub const fn offset(&self) -> u32 { self.offset }
 }
 

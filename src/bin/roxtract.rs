@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 		for ch in module.title()?.as_ref() {
 			print!("{}", (*ch as char).escape_default())
 		}
-		println!();
+		println!(" (size {} bytes) at {:06x}", module.data().len(), module.offset());
 	}
 
 	Ok(())
