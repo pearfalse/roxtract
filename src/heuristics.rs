@@ -1,4 +1,4 @@
-use crate::{Rom, bintrinsics::Slice32};
+use crate::bintrinsics::Slice32;
 
 #[non_exhaustive]
 pub struct KnownRiscOsVersion {
@@ -77,11 +77,16 @@ impl<'a> WordCursor<'a> {
 	pub fn pos(&self) -> u32 { self.cursor_rel }
 }
 
-impl Rom {
-	pub fn find_offset_to(haystack: &Slice32, needle: &Slice32, offset: u32) -> Option<u32> {
-		if haystack.len() < 4 { return None; }
-		let target = Self::find(haystack, needle)?;
-		let mut cursor = WordCursor::new_end(haystack.subslice(0..target)?);
+pub trait RomHeuristics {
+	fn find(&self, needle: &Slice32) -> Option<u32>;
+	fn find_offset_to(&self, needle: &Slice32, offset: u32) -> Option<u32>;
+}
+
+impl RomHeuristics for Slice32 {
+	fn find_offset_to(&self, needle: &Slice32, offset: u32) -> Option<u32> {
+		if self.len() < 4 { return None; }
+		let target = Self::find(self, needle)?;
+		let mut cursor = WordCursor::new_end(self.subslice(0..target)?);
 
 		loop {
 			let possible_start = cursor.pos().checked_sub(offset)?;
@@ -92,7 +97,8 @@ impl Rom {
 		}
 	}
 
-	pub fn find(mut haystack: &Slice32, needle: &Slice32) -> Option<u32> {
+	fn find(&self, needle: &Slice32) -> Option<u32> {
+		let mut haystack = self;
 		if haystack.is_empty() { return None; }
 		let (&needle_first, needle_rem) = needle.split_first()?;
 
@@ -127,27 +133,27 @@ mod tests {
 
 	#[test]
 	fn find() {
-		assert_eq!(Rom::find(s(b"abcdef"), s(b"abc")), Some(0));
-		assert_eq!(Rom::find(s(b"abc"), s(b"abc")), Some(0));
-		assert_eq!(Rom::find(s(b"abcdef"), s(b"bc")), Some(1));
-		assert_eq!(Rom::find(s(b"aabc"), s(b"abc")), Some(1));
-		assert_eq!(Rom::find(s(b"ababc"), s(b"abc")), Some(2));
-		assert_eq!(Rom::find(s(b"abac"), s(b"abc")), None);
-		assert_eq!(Rom::find(s(b"cbabc"), s(b"abc")), Some(2));
-		assert_eq!(Rom::find(s(b"bac"), s(b"a")), Some(1));
+		assert_eq!(s(b"abcdef").find(s(b"abc")), Some(0));
+		assert_eq!(s(b"abc").find(s(b"abc")), Some(0));
+		assert_eq!(s(b"abcdef").find(s(b"bc")), Some(1));
+		assert_eq!(s(b"aabc").find(s(b"abc")), Some(1));
+		assert_eq!(s(b"ababc").find(s(b"abc")), Some(2));
+		assert_eq!(s(b"abac").find(s(b"abc")), None);
+		assert_eq!(s(b"cbabc").find(s(b"abc")), Some(2));
+		assert_eq!(s(b"bac").find(s(b"a")), Some(1));
 
-		assert_eq!(Rom::find(s(b""), s(b"empty haystack")), None);
-		assert_eq!(Rom::find(s(b"empty needle"), s(b"")), None);
+		assert_eq!(s(b"").find(s(b"empty haystack")), None);
+		assert_eq!(s(b"empty needle").find(s(b"")), None);
 	}
 
 	#[test]
 	fn find_offset_to() {
-		assert_eq!(Rom::find_offset_to(s(b"\x08\0\0\0ABCDEFGH"), s(b"EFGH"), 0), Some(0));
-		assert_eq!(Rom::find_offset_to(s(b"!!!!\x08\0\0\0ABCDEFGH"), s(b"EFGH"), 0), Some(4));
-		assert_eq!(Rom::find_offset_to(s(b"!!!!\x04\0\0\0EFGH"), s(b"EFGH"), 0), Some(4));
-		assert_eq!(Rom::find_offset_to(s(b"!!!!????ZERO\x08\0\0\0EFGH"), s(b"EFGH"), 4), Some(8));
+		assert_eq!(s(b"\x08\0\0\0ABCDEFGH").find_offset_to(s(b"EFGH"), 0), Some(0));
+		assert_eq!(s(b"!!!!\x08\0\0\0ABCDEFGH").find_offset_to(s(b"EFGH"), 0), Some(4));
+		assert_eq!(s(b"!!!!\x04\0\0\0EFGH").find_offset_to(s(b"EFGH"), 0), Some(4));
+		assert_eq!(s(b"!!!!????ZERO\x08\0\0\0EFGH").find_offset_to(s(b"EFGH"), 4), Some(8));
 
-		assert_eq!(Rom::find_offset_to(s(&[
+		assert_eq!(s(&[
 			b'o', b'f', b'f', b's', b'e', b't', b'!', b'!',
 			0,0,0,0, // run         r00 a08
 			0,0,0,0, // init        r04 a0c
@@ -161,7 +167,7 @@ mod tests {
 			0,0,0,0, // swi table   r24 a2c
 			0,0,0,0, // swi code    r28 a30
 			b'M', b'o', b'd', b'u', b'l', b'e', 0 // r2c a34
-		]), s(b"Module\0"), 0x10), Some(8));
+		]).find_offset_to(s(b"Module\0"), 0x10), Some(8));
 	}
 
 	#[test]
@@ -177,6 +183,6 @@ mod tests {
 		};
 		data.copy_from_slice(DATA);
 		assert_ne!(data.as_ptr().addr() & 3, 0);
-		assert_eq!(Rom::find_offset_to(s(data), s(b"HELLO\0"), 0), Some(0));
+		assert_eq!(s(data).find_offset_to(s(b"HELLO\0"), 0), Some(0));
 	}
 }
