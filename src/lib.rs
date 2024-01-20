@@ -122,6 +122,27 @@ impl Rom<Box<[u8]>> {
 }
 
 impl<M: Borrow<[u8]>> Rom<M> {
+	pub fn from_mem(mem: M) -> Result<Rom<M>, RomLoadError> {
+		let data = mem.borrow();
+		if data.len() > ROM_LIMIT as usize || data.len() & 3 != 0 {
+			return Err(RomLoadError::RomInvalidSize);
+		}
+
+		let mut crc = CRCu32::crc32();
+		crc.digest(data);
+
+		Ok(Rom {
+			data: mem,
+			crc32: crc.get_crc(),
+
+			kernel_start: CachedOffset::default(),
+			module_chain_start: CachedOffset::default(),
+			version_name_str: CachedOffset::default(),
+		})
+	}
+}
+
+impl<M: Borrow<[u8]>> Rom<M> {
 	pub fn as_slice32(&self) -> &Slice32 {
 		unsafe {
 			// safety: we only allow construction of Roms <= 12MiB
