@@ -1,4 +1,5 @@
 use core::{
+	borrow::Borrow,
 	iter::ExactSizeIterator,
 	mem::transmute,
 	ops::Range,
@@ -102,6 +103,20 @@ impl Slice32 {
 		let mut n = 0;
 		while self.read_byte(n)? != 0 { n += 1; }
 		Some(self.subslice(0..n).unwrap())
+	}
+}
+
+impl Borrow<[u8]> for Slice32 {
+	#[inline(always)]
+	fn borrow(&self) -> &[u8] {
+		&self.0
+	}
+}
+
+impl<'a> Borrow<[u8]> for &'a Slice32 {
+	#[inline(always)]
+	fn borrow(&self) -> &[u8] {
+		&self.0
 	}
 }
 
