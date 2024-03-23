@@ -1,6 +1,5 @@
 use core::{
 	borrow::Borrow,
-	iter::ExactSizeIterator,
 	mem::transmute,
 	ops::Range,
 	slice::from_raw_parts,
@@ -60,7 +59,7 @@ impl Slice32 {
 	}
 
 	pub fn subslice(&self, range: Range<u32>) -> Option<&Self> {
-		assert!(range.end >= range.start);
+		if range.start > range.end { return None; }
 
 		if range.start as usize > self.0.len() || range.end as usize > self.0.len() {
 			return None;
@@ -68,10 +67,7 @@ impl Slice32 {
 
 		Some(unsafe {
 			// SAFETY: we've checked that the given range is within `self`
-			transmute(from_raw_parts(
-				self.0.as_ptr().add(range.start as usize),
-				ExactSizeIterator::len(&range)
-			))
+			self.subslice_unchecked(range)
 		})
 	}
 
@@ -102,7 +98,24 @@ impl Slice32 {
 	pub fn cstr(&self) -> Option<&Self> {
 		let mut n = 0;
 		while self.read_byte(n)? != 0 { n += 1; }
-		Some(self.subslice(0..n).unwrap())
+		Some(unsafe {
+			// SAFETY: we've checked every byte in the slice, and also know the terminator is there
+			// we also won't pass a bogus range
+			self.subslice_unchecked(0..n)
+		})
+	}
+
+
+	unsafe fn subslice_unchecked(&self, range: Range<u32>) -> &Self {
+		unsafe {
+			// SAFETY: caller must ensure that `range` is valid, and in range for `self`
+			let len = range.end.checked_sub(range.start).unwrap_unchecked();
+
+			transmute(from_raw_parts(
+				self.0.as_ptr().add(range.start as usize),
+				len as usize,
+			))
+		}
 	}
 }
 
