@@ -17,8 +17,6 @@ use std::{
 	iter::FusedIterator, borrow::Borrow,
 };
 
-use crc_any::CRCu32;
-
 
 type Offset = NonZeroU32;
 // NonZeroU32::MAX represents 'cached find failure'
@@ -81,7 +79,6 @@ impl Error for RomDecodeError { }
 
 pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 	data: M,
-	crc32: u32,
 
 	kernel_start: CachedOffset,
 	module_chain_start: CachedOffset,
@@ -107,12 +104,8 @@ impl Rom<Box<[u8]>> {
 		let mut data = vec![0u8; rom_len as usize].into_boxed_slice();
 		file.read_exact(&mut data)?;
 
-		let mut crc = CRCu32::crc32();
-		crc.digest(&data);
-
 		Ok(Rom {
 			data,
-			crc32: crc.get_crc(),
 
 			kernel_start: CachedOffset::default(),
 			module_chain_start: CachedOffset::default(),
@@ -128,12 +121,8 @@ impl<M: Borrow<[u8]>> Rom<M> {
 			return Err(RomLoadError::RomInvalidSize);
 		}
 
-		let mut crc = CRCu32::crc32();
-		crc.digest(data);
-
 		Ok(Rom {
 			data: mem,
-			crc32: crc.get_crc(),
 
 			kernel_start: CachedOffset::default(),
 			module_chain_start: CachedOffset::default(),
@@ -183,7 +172,6 @@ impl<M: Borrow<[u8]>> Rom<M> {
 	pub fn as_ref<'a>(&'a self) -> Rom<&'a Slice32> {
 		Rom {
 			data: self.as_slice32(),
-			crc32: self.crc32,
 			kernel_start: self.kernel_start.clone(),
 			module_chain_start: self.module_chain_start.clone(),
 			version_name_str: self.version_name_str.clone(),
