@@ -16,7 +16,7 @@ sptr = "0.3.2"
 assert_hex = "0.4.1"
 
 [features]
-cli = ["gumdrop", "gumdrop_derive"]
+cli = ["dep:gumdrop", "dep:gumdrop_derive"]
 
 [[bin]]
 name = "roxtract"
