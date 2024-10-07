@@ -5,15 +5,19 @@ use core::{
 	slice::from_raw_parts,
 };
 
+/// A thin wrapper around a byte slice, providing fallible, copying, 32-bit access operations.
+/// The underlying slice is no larger than `i32::MAX`.
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Eq)]
 pub struct Slice32([u8]);
 
 impl Slice32 {
-	pub fn len(&self) -> u32 { self.0.len() as u32 }
+	/// Returns the length of the slice.
+	pub const fn len(&self) -> u32 { self.0.len() as u32 }
 
 	const SIZE_LIMIT: usize = i32::MAX as usize;
 
+	/// Constructs a new `Slice32`, if its length is within range.
 	pub const fn new(src: &[u8]) -> Option<&Slice32> {
 		if src.len() > Self::SIZE_LIMIT { return None; }
 		Some(unsafe {
@@ -22,6 +26,8 @@ impl Slice32 {
 		})
 	}
 
+	/// Constructs a new `Slice32` variant via a `Box` allocation. If the array is too large, the
+	/// original `Box` is returned.
 	pub fn new_boxed(src: Box<[u8]>) -> Result<Box<Slice32>, Box<[u8]>> {
 		if src.len() > Self::SIZE_LIMIT { return Err(src); }
 
@@ -31,9 +37,11 @@ impl Slice32 {
 		})
 	}
 
+	/// Constructs a new `Slice32` without verifying its length.
+	///
 	/// # Safety
 	///
-	/// - Slice length must fit in a `u32`.
+	/// - Slice length must be no larger than `i32::MAX`.
 	pub const unsafe fn new_unchecked(src: &[u8]) -> &Self {
 		unsafe {
 			// SAFETY: this is a sound cast to a transparent wrapper type, but for the sake of
@@ -42,11 +50,15 @@ impl Slice32 {
 		}
 	}
 
+	/// Reads a byte at the given index.
 	#[inline]
 	pub fn read_byte(&self, idx: u32) -> Option<u8> {
 		self.0.get(idx as usize).copied()
 	}
 
+	/// Reads a word at the given index.
+	///
+	/// This memory access does _not_ need to be aligned, physically or logically.
 	pub fn read_word(&self, idx: u32) -> Option<u32> {
 		if idx.saturating_add(4) > self.len() {
 			return None;
@@ -58,6 +70,9 @@ impl Slice32 {
 		})
 	}
 
+	/// Subslices `self` by the given range.
+	///
+	/// Returns `None` if the requested slice is not in range.
 	pub fn subslice(&self, range: Range<u32>) -> Option<&Self> {
 		if range.start > range.end { return None; }
 
@@ -71,14 +86,17 @@ impl Slice32 {
 		})
 	}
 
+	/// Subslices `self` by removing `new_start` bytes from the front.
 	#[inline]
 	pub fn subslice_from(&self, new_start: u32) -> Option<&Self> {
 		self.subslice(new_start..(self.len()))
 	}
 
+	/// Returns `true` if `self` is an empty slice.
 	#[inline]
 	pub const fn is_empty(&self) -> bool { self.0.is_empty() }
 
+	/// Returns the first byte in the slice, if it isn't empty.
 	#[inline]
 	pub const fn first(&self) -> Option<u8> {
 		match self.0.first() {
@@ -87,6 +105,7 @@ impl Slice32 {
 		}
 	}
 
+	/// Splits the slice at the first byte
 	#[inline]
 	pub fn split_first(&self) -> Option<(&u8, &Slice32)> {
 		self.0.split_first().map(|(f, rem)| (f, unsafe {
@@ -95,6 +114,9 @@ impl Slice32 {
 		}))
 	}
 
+	/// Interprets the start of `self` as being the first byte of a C-string, returning the rest.
+	///
+	/// Returns `None` if no terminator was found.
 	pub fn cstr(&self) -> Option<&Self> {
 		let mut n = 0;
 		while self.read_byte(n)? != 0 { n += 1; }

@@ -1,6 +1,10 @@
+//! Data extraction from an Acorn-era RISC OS ROM image.
+//!
+//! The starting point for loading and interpreting a ROM image is the [`Rom`] struct.
 #![cfg_attr(debug_assertions, allow(dead_code))]
 
 mod heuristics;
+pub use heuristics::KnownRiscOsVersion;
 
 mod bintrinsics;
 pub use bintrinsics::Slice32;
@@ -22,16 +26,23 @@ type Offset = NonZeroU32;
 // NonZeroU32::MAX represents 'cached find failure'
 type CachedOffset = Cell<Option<Offset>>;
 
+/// Reasons why Roxtract will refuse to load a ROM image file.
 #[derive(Debug)]
 pub enum RomLoadError {
+	/// The underlying device failed on an I/O operation
 	Io(io::Error),
+	/// The ROM is an invalid size
 	RomInvalidSize,
 }
 
+/// Reasons why Roxtract cannot understand a loaded ROM image.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RomDecodeError {
+	/// UtilityModule, the start of the ROM module chain, was not found
 	UtilityModuleNotFound,
+	/// The module chain is broken, suggesting the ROM image is corrupted
 	ModuleChainBroken,
+	/// A C-string was not terminated
 	UnterminatedCstr,
 }
 
@@ -77,6 +88,16 @@ impl fmt::Display for RomDecodeError {
 impl Error for RomDecodeError { }
 
 
+/// A wrapper round a RISC OS ROM image.
+///
+/// A RISC OS ROM image is considered to have the following parts:
+///
+/// - Entry point and bootloader;
+/// - Kernel;
+/// - Chain (linked list) of built-in modules, starting with `UtilityModule`;
+/// - Padding (and unknown trailing data in the last 12 bytes).
+///
+/// The ROM image has to be contiguous in system memory.
 pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 	data: M,
 
@@ -88,6 +109,7 @@ pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 const ROM_LIMIT: u32 = 12 << 20; // 12 MiB limit in the Archimedes memory map
 
 impl Rom<Box<[u8]>> {
+	/// Creates a `Rom` owning its contents from a file.
 	pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, RomLoadError> {
 		Self::from_file_impl(path.as_ref())
 	}
@@ -115,6 +137,7 @@ impl Rom<Box<[u8]>> {
 }
 
 impl<M: Borrow<[u8]>> Rom<M> {
+	/// Creates a `Rom` from some existing memory allocation containing a ROM image.
 	pub fn from_mem(mem: M) -> Result<Rom<M>, RomLoadError> {
 		let data = mem.borrow();
 		if data.len() > ROM_LIMIT as usize || data.len() & 3 != 0 {
@@ -132,6 +155,8 @@ impl<M: Borrow<[u8]>> Rom<M> {
 }
 
 impl<M: Borrow<[u8]>> Rom<M> {
+	/// Returns a slice of the ROM image.
+	#[inline]
 	pub fn as_slice32(&self) -> &Slice32 {
 		unsafe {
 			// SAFETY: we only allow construction of Roms <= 12 MiB
@@ -151,6 +176,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		result
 	}
 
+	/// Returns the offset of the kernel in the ROM image, or `None` if it wasn't found.
 	pub fn kernel_start(&self) -> Option<Offset> {
 		self.recell_offset(&self.kernel_start,
 			|| self.as_slice32().find(Slice32::new(b"MODULE#\0").unwrap())
@@ -158,6 +184,8 @@ impl<M: Borrow<[u8]>> Rom<M> {
 				))
 	}
 
+	/// Returns the offset of the entry into the module chain, or `None` if `UtilityModule` wasn't
+	/// found.
 	pub fn module_chain_start(&self) -> Option<Offset> {
 		self.recell_offset(&self.module_chain_start, ||
 			self.as_slice32().find_offset_to(Slice32::new(b"UtilityModule\0").unwrap(), 0x10)
@@ -165,10 +193,12 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		)
 	}
 
+	/// Returns an iterator over all modules in the ROM chain.
 	pub fn module_chain(&self) -> ModuleChain<'_> {
 		ModuleChain::new(self, self.module_chain_start())
 	}
 
+	/// Returns a `Rom` object that transparently borrows the data of `self` as a `Slice32`.
 	pub fn as_ref<'a>(&'a self) -> Rom<&'a Slice32> {
 		Rom {
 			data: self.as_slice32(),
@@ -178,6 +208,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		}
 	}
 
+	/// Returns a raw slice to the ROM image data.
 	pub fn as_slice(&self) -> &[u8] {
 		self.data.borrow().as_ref()
 	}
@@ -205,6 +236,7 @@ impl<M: Borrow<[u8]>> Borrow<Slice32> for Rom<M> {
 	}
 }
 
+/// An iterator over each module in the ROM image.
 pub struct ModuleChain<'a> {
 	rom: &'a Slice32,
 	pos: u32,
@@ -248,12 +280,14 @@ impl<'a> Iterator for ModuleChain<'a> {
 
 impl<'a> FusedIterator for ModuleChain<'a> { }
 
+/// Metadata for a single module in the ROM image.
 pub struct Module<'a> {
 	bytes: &'a Slice32,
 	offset: u32,
 }
 
 impl<'a> Module<'a> {
+	/// Returns a slice over the C-string of this module title.
 	pub fn title(&self) -> Result<&Slice32, RomDecodeError> {
 		self.bytes.read_word(0x10) // get title offset
 			.and_then(|o| self.bytes.subslice_from(o)) // shift slice start to title start
@@ -261,9 +295,11 @@ impl<'a> Module<'a> {
 			.ok_or(RomDecodeError::UnterminatedCstr)
 	}
 
+	/// Returns a slice over the entire module contents.
 	#[inline]
 	pub const fn data(&self) -> &Slice32 { self.bytes }
 
+	/// Returns the offset of this module within the ROM image.
 	#[inline]
 	pub const fn offset(&self) -> u32 { self.offset }
 }

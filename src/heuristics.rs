@@ -1,11 +1,15 @@
 use crate::bintrinsics::Slice32;
 
+/// Metadata about a known RISC OS ROM image.
 #[non_exhaustive]
 pub struct KnownRiscOsVersion {
-	name_high_level: &'static str,
-	name_internal: &'static [u8],
+	/// The OS version, in colloquial format (e.g. `RISC OS 3.11`).
+	pub name_high_level: &'static str,
+	/// The OS version string, as found in the ROM image.
+	pub name_internal: &'static [u8],
 	name_internal_pos: u32,
-	crc32: u32,
+	/// The CRC32 hash of the ROM contents.
+	pub crc32: u32,
 }
 
 static RISC_OS_311: KnownRiscOsVersion = KnownRiscOsVersion {
@@ -16,6 +20,7 @@ static RISC_OS_311: KnownRiscOsVersion = KnownRiscOsVersion {
 };
 
 impl KnownRiscOsVersion {
+	/// Returns `true` if the byte data in `rom` matches `self`.
 	pub fn matches(&self, rom_data: &[u8]) -> bool {
 		let Some(slice_end) = self.name_internal_pos.checked_add(self.name_internal.len() as u32)
 			.filter(|n| *n as usize <= rom_data.len())
@@ -30,6 +35,8 @@ impl KnownRiscOsVersion {
 		hasher.get_crc() == self.crc32
 	}
 
+	/// Returns a reference to a `KnownRiscOsVersion` object, if there is one that matches
+	/// the ROM image described in `rom_data`.
 	pub fn find(rom_data: &[u8]) -> Option<&'static KnownRiscOsVersion> {
 		if RISC_OS_311.matches(rom_data) {
 			return Some(&RISC_OS_311);
@@ -85,8 +92,16 @@ impl<'a> WordCursor<'a> {
 	pub fn pos(&self) -> u32 { self.cursor_rel }
 }
 
-pub trait RomHeuristics {
+/// Extension trait for searching through byte slices in application-specific ways.
+pub(crate) trait RomHeuristics {
+	/// Searches for `needle` in `self`, and returns a byte offset to it if found
 	fn find(&self, needle: &Slice32) -> Option<u32>;
+
+	/// Finds the byte offset a word in `self` that functions as an offset to a copy of `needle`
+	/// in `self`.
+	///
+	/// The `offset` parameter allows shifting the base of the relative addressing earlier by
+	/// some number of bytes.
 	fn find_offset_to(&self, needle: &Slice32, offset: u32) -> Option<u32>;
 }
 
