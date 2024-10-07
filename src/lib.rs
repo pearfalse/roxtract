@@ -56,7 +56,7 @@ impl fmt::Display for RomLoadError {
 			RomLoadError::Io(e)
 				=> write!(f, "I/O error: {}", e),
 			RomLoadError::RomInvalidSize
-				=> f.write_str("ROM invalid size (mut be 2 MiB or 512KiB)"),
+				=> f.write_str("ROM invalid size (mut be 32-bit aligned and no more than 12 MiB)"),
 		}
 	}
 }
@@ -134,7 +134,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 impl<M: Borrow<[u8]>> Rom<M> {
 	pub fn as_slice32(&self) -> &Slice32 {
 		unsafe {
-			// safety: we only allow construction of Roms <= 12MiB
+			// SAFETY: we only allow construction of Roms <= 12 MiB
 			// so Slice32 will hold them no problem
 			Slice32::new_unchecked(self.data.borrow())
 		}
