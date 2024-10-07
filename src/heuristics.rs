@@ -29,6 +29,14 @@ impl KnownRiscOsVersion {
 		hasher.digest(rom_data);
 		hasher.get_crc() == self.crc32
 	}
+
+	pub fn find(rom_data: &[u8]) -> Option<&'static KnownRiscOsVersion> {
+		if RISC_OS_311.matches(rom_data) {
+			return Some(&RISC_OS_311);
+		}
+
+		None
+	}
 }
 
 struct WordCursor<'a> {
