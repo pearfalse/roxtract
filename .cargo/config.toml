@@ -1,0 +1,4 @@
+[alias]
+
+bbd = ["build", "-p", "roxtract-bin"]
+bbr = ["build", "-p", "roxtract-bin", "--release"]

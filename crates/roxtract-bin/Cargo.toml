@@ -1,0 +1,15 @@
+[package]
+name = "roxtract-bin"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "roxtract"
+
+[dependencies]
+roxtract = { path = "../.." }
+
+crc-any = { workspace = true }
+
+gumdrop = { version = "0.8.1" }
+gumdrop_derive = { version = "0.8.1" }

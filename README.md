@@ -11,8 +11,7 @@ Roxtract is ready to use as a library. There are no feature flags to configure.
 
 ## As a standalone app
 
-To build the command-line app, run `cargo build --release --bin roxtract --features=cli`. The final
-binary will be inside `target/release`.
+To build the command-line app, run `cargo bbr`. The final binary will be inside `target/release`.
 
 ## License
 

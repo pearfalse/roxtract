@@ -1,4 +1,4 @@
-use core::{
+use std::{
 	borrow::Borrow,
 	mem::transmute,
 	ops::Range,

@@ -1,23 +1,22 @@
 [package]
 name = "roxtract"
+version.workspace = true
+edition.workspace = true
+
+[workspace]
+members = ["crates/*"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace.dependencies]
+crc-any = "2.5"
 
 [dependencies]
-crc-any = "2.4.3"
-
-gumdrop = { version = "0.8.1", optional = true }
-gumdrop_derive = { version = "0.8.1", optional = true }
+crc-any = { workspace = true }
 
 [dev-dependencies]
 sptr = "0.3.2"
 assert_hex = "0.4.1"
-
-[features]
-cli = ["dep:gumdrop", "dep:gumdrop_derive"]
-
-[[bin]]
-name = "roxtract"
-required-features = ["cli"]
