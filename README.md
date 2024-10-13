@@ -1,9 +1,10 @@
 # Roxtract
 
 A library for analysing and extracting data from a RISC OS ROM image. It also includes a basic
-command-line app for dumping the module chain.
+command-line app for dumping info about the module chain.
 
-The library is in very early stages and has only been tested on Acorn RISC OS 3.11.
+The library is in very early stages, but can correctly identify every Acorn-era published ROM image
+of RISC OS (and Arthur 1.20; it can identify the module chain in Arthur 0.30).
 
 ## As a Rust library
 
