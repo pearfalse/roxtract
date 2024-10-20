@@ -1,5 +1,8 @@
 [package]
 name = "roxtract"
+description = "Inspect and extract from RISC OS ROM images"
+repository = "https://github.com/pearfalse/roxtract"
+license = "BSD-3-Clause"
 version.workspace = true
 edition.workspace = true
 
