@@ -104,6 +104,7 @@ pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 	kernel_start: CachedOffset,
 	module_chain_start: CachedOffset,
 	version_name_str: CachedOffset,
+	crc32_hash: Cell<Option<u32>>,
 }
 
 const ROM_LIMIT: u32 = 12 << 20; // 12 MiB limit in the Archimedes memory map
@@ -132,6 +133,7 @@ impl Rom<Box<[u8]>> {
 			kernel_start: CachedOffset::default(),
 			module_chain_start: CachedOffset::default(),
 			version_name_str: CachedOffset::default(),
+			crc32_hash: Default::default(),
 		})
 	}
 }
@@ -150,6 +152,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 			kernel_start: CachedOffset::default(),
 			module_chain_start: CachedOffset::default(),
 			version_name_str: CachedOffset::default(),
+			crc32_hash: Default::default(),
 		})
 	}
 }
@@ -193,6 +196,21 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		)
 	}
 
+	/// Returns the CRC32 hash of the ROM image.
+	pub fn crc32_hash(&self) -> u32 {
+		if let Some(already) = self.crc32_hash.get() { return already; }
+
+		let hash = calc_hash(self.data.borrow());
+		#[inline(never)] // the CRC types consume a lot of stack space
+		fn calc_hash(data: &[u8]) -> u32 {
+			let mut hasher = crc_any::CRCu32::crc32();
+			hasher.digest(data);
+			hasher.get_crc()
+		}
+		self.crc32_hash.set(Some(hash));
+		hash
+	}
+
 	/// Returns an iterator over all modules in the ROM chain.
 	pub fn module_chain(&self) -> ModuleChain<'_> {
 		ModuleChain::new(self, self.module_chain_start())
@@ -205,6 +223,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 			kernel_start: self.kernel_start.clone(),
 			module_chain_start: self.module_chain_start.clone(),
 			version_name_str: self.version_name_str.clone(),
+			crc32_hash: self.crc32_hash.clone(),
 		}
 	}
 

@@ -46,6 +46,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 	let args: CliArgs = gumdrop::parse_args_default_or_exit::<CliArgs>();
 
 	let rom = Rom::from_file(args.rom_path)?;
+	if let Some(known) = KnownRiscOsVersion::find(&rom) {
+		println!("ROM appears to be {}", known.name_high_level);
+	} else {
+		println!("ROM image not recognised; it may be modified or corrupt");
+	}
 	println!("Kernel starts at {:04x}", rom.kernel_start().or_print("[not found]"));
 	println!("Module chain starts at {:04x}", rom.module_chain_start().or_print("[UtilityModule not found]"));
 

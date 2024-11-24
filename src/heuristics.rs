@@ -1,4 +1,6 @@
-use crate::bintrinsics::Slice32;
+use std::borrow::Borrow;
+
+use crate::{bintrinsics::Slice32, Rom};
 
 /// Metadata about a known RISC OS ROM image.
 #[non_exhaustive]
@@ -12,6 +14,48 @@ pub struct KnownRiscOsVersion {
 	pub crc32: u32,
 }
 
+static ARTHUR_030: KnownRiscOsVersion = KnownRiscOsVersion {
+	name_high_level: "Arthur 0.30",
+	name_internal: b"Arthur\t\t0.30 (17 Jun 1987)\0",
+	name_internal_pos: 0x1460,
+	crc32: 0x5df8ed42,
+};
+
+static ARTHUR_120: KnownRiscOsVersion = KnownRiscOsVersion {
+	name_high_level: "Arthur 1.20",
+	name_internal: b"Arthur\t\t1.20 (25 Sep 1987)\0",
+	name_internal_pos: 0x1318,
+	crc32: 0xeb3fda57,
+};
+
+static RISC_OS_200: KnownRiscOsVersion = KnownRiscOsVersion {
+	name_high_level: "RISC OS 2.00",
+	name_internal: b"RISC OS\t\t2.00 (05 Oct 1988)\0",
+	name_internal_pos: 0x1b38,
+	crc32: 0x89c4ad36,
+};
+
+static RISC_OS_201: KnownRiscOsVersion = KnownRiscOsVersion {
+	name_high_level: "RISC OS 2.01",
+	name_internal: b"RISC OS\t\t2.01 (05 Jul 1990)\0",
+	name_internal_pos: 0x4c90,
+	crc32: 0x7cb5ea3f,
+};
+
+static RISC_OS_300: KnownRiscOsVersion = KnownRiscOsVersion {
+	name_high_level: "RISC OS 3.00",
+	name_internal: b"RISC OS\t\t3.00 (25 Sep 1991)\0",
+	name_internal_pos: 0x4854,
+	crc32: 0xbfc99817,
+};
+
+static RISC_OS_310: KnownRiscOsVersion = KnownRiscOsVersion {
+	name_high_level: "RISC OS 3.10",
+	name_internal: b"RISC OS\t\t3.10 (30 Apr 1992)\0",
+	name_internal_pos: 0x498c,
+	crc32: 0xecac4ea6,
+};
+
 static RISC_OS_311: KnownRiscOsVersion = KnownRiscOsVersion {
 	name_high_level: "RISC OS 3.11",
 	name_internal: b"RISC OS\t\t3.11 (29 Sep 1992)\0",
@@ -19,30 +63,80 @@ static RISC_OS_311: KnownRiscOsVersion = KnownRiscOsVersion {
 	crc32: 0x54c0c963,
 };
 
+static RISC_OS_319: KnownRiscOsVersion = KnownRiscOsVersion {
+	name_high_level: "RISC OS 3.19",
+	name_internal: b"RISC OS\t\t3.19 (9. Jun 1993)\0",
+	name_internal_pos: 0x4a38,
+	crc32: 0x00c7a3d3,
+};
+
+static RISC_OS_350: KnownRiscOsVersion = KnownRiscOsVersion {
+	name_high_level: "RISC OS 3.50",
+	name_internal: b"RISC OS\t\t3.50 (18 Feb 1994)\0",
+	name_internal_pos: 0x5134,
+	crc32: 0x541b1415,
+};
+
+static RISC_OS_360: KnownRiscOsVersion = KnownRiscOsVersion {
+	name_high_level: "RISC OS 3.60",
+	name_internal: b"RISC OS\t\t3.60 (13 Apr 1995)\0",
+	name_internal_pos: 0x54b4,
+	crc32: 0xa9822c2c,
+};
+
+static RISC_OS_370: KnownRiscOsVersion = KnownRiscOsVersion {
+	name_high_level: "RISC OS 3.70",
+	name_internal: b"RISC OS\t\t3.70 (30 Jul 1996)\0",
+	name_internal_pos: 0x55c4,
+	crc32: 0x63fc131a,
+};
+
+static RISC_OS_371: KnownRiscOsVersion = KnownRiscOsVersion {
+	name_high_level: "RISC OS 3.71",
+	name_internal: b"RISC OS\t\t3.71 (19 Feb 1997)\0",
+	name_internal_pos: 0x56e4,
+	crc32: 0x211cf888,
+};
+
 impl KnownRiscOsVersion {
 	/// Returns `true` if the byte data in `rom` matches `self`.
-	pub fn matches(&self, rom_data: &[u8]) -> bool {
-		let Some(slice_end) = self.name_internal_pos.checked_add(self.name_internal.len() as u32)
-			.filter(|n| *n as usize <= rom_data.len())
-		else { return false };
+	fn matches<M: Borrow<[u8]>>(&self, rom: &Rom<M>) -> bool {
+		fn check_data(this: &KnownRiscOsVersion, rom_data: &[u8]) -> bool {
+			let Some(slice_end) = this.name_internal_pos
+				.checked_add(this.name_internal.len() as u32)
+				.filter(|n| *n as usize <= rom_data.len())
+			else { return false };
 
-		if rom_data[self.name_internal_pos as usize .. slice_end as usize] != *self.name_internal {
-			return false;
+			if rom_data[this.name_internal_pos as usize .. slice_end as usize] != *this.name_internal {
+				return false;
+			}
+
+			true
 		}
 
-		let mut hasher = crc_any::CRCu32::crc32();
-		hasher.digest(rom_data);
-		hasher.get_crc() == self.crc32
+		check_data(self, rom.borrow()) && rom.crc32_hash() == self.crc32
 	}
 
 	/// Returns a reference to a `KnownRiscOsVersion` object, if there is one that matches
 	/// the ROM image described in `rom_data`.
-	pub fn find(rom_data: &[u8]) -> Option<&'static KnownRiscOsVersion> {
-		if RISC_OS_311.matches(rom_data) {
-			return Some(&RISC_OS_311);
+	pub fn find<M: Borrow<[u8]>>(rom: &Rom<M>) -> Option<&'static KnownRiscOsVersion> {
+		macro_rules! consider {
+			($($consider:ident),+ $(,)?) => {
+				$(if $consider.matches(rom) {
+					return Some(&$consider);
+				})+
+
+				return None;
+			};
 		}
 
-		None
+		consider![
+			RISC_OS_311, RISC_OS_371, RISC_OS_360, RISC_OS_201,
+			RISC_OS_310, RISC_OS_300, RISC_OS_319,
+			RISC_OS_370, RISC_OS_350,
+			RISC_OS_200,
+			ARTHUR_120, ARTHUR_030,
+		];
 	}
 }
 
