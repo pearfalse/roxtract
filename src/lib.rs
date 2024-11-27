@@ -11,14 +11,15 @@ pub use bintrinsics::Slice32;
 use heuristics::RomHeuristics;
 
 use std::{
+	borrow::Borrow,
 	cell::Cell,
 	error::Error,
 	fmt,
 	io::{self, Read},
-	num::NonZeroU32,
+	iter::FusedIterator,
+	num::{NonZeroU32, NonZeroU64},
 	ops::Deref,
 	path::Path,
-	iter::FusedIterator, borrow::Borrow,
 };
 
 
@@ -105,6 +106,7 @@ pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 	module_chain_start: CachedOffset,
 	version_name_str: CachedOffset,
 	crc32_hash: Cell<Option<u32>>,
+	sort_key: Cell<Option<NonZeroU64>>,
 }
 
 const ROM_LIMIT: u32 = 12 << 20; // 12 MiB limit in the Archimedes memory map
@@ -134,6 +136,7 @@ impl Rom<Box<[u8]>> {
 			module_chain_start: CachedOffset::default(),
 			version_name_str: CachedOffset::default(),
 			crc32_hash: Default::default(),
+			sort_key: Default::default(),
 		})
 	}
 }
@@ -153,6 +156,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 			module_chain_start: CachedOffset::default(),
 			version_name_str: CachedOffset::default(),
 			crc32_hash: Default::default(),
+			sort_key: Default::default(),
 		})
 	}
 }
@@ -211,6 +215,15 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		hash
 	}
 
+	/// Returns an integer key that can be used to sort multiple ROM images by version.
+	pub fn sort_key(&self) -> NonZeroU64 {
+		if let Some(already) = self.sort_key.get() { return already; }
+
+		let key = calc_sort_key(self).unwrap_or(NonZeroU64::MAX);
+		self.sort_key.set(Some(key));
+		key
+	}
+
 	/// Returns an iterator over all modules in the ROM chain.
 	pub fn module_chain(&self) -> ModuleChain<'_> {
 		ModuleChain::new(self, self.module_chain_start())
@@ -224,6 +237,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 			module_chain_start: self.module_chain_start.clone(),
 			version_name_str: self.version_name_str.clone(),
 			crc32_hash: self.crc32_hash.clone(),
+			sort_key: self.sort_key.clone(),
 		}
 	}
 
@@ -231,6 +245,103 @@ impl<M: Borrow<[u8]>> Rom<M> {
 	pub fn as_slice(&self) -> &[u8] {
 		self.data.borrow().as_ref()
 	}
+}
+
+// vvvYYYMMdd where
+// vvv = decimalised version, à la Wimp_Initialise (e.g. RISC OS 3.11 := 311, Arthur 0.30 := 30)
+// YYY = year of release - 1900 (e.g. RISC OS 2.01 := 90)
+// MM = month of release (01..=12)
+// dd = date of release (01..=31)
+#[inline(never)]
+fn calc_sort_key<M: Borrow<[u8]>>(rom: &Rom<M>) -> Option<NonZeroU64> {
+	let version_str = rom.version_name_str.get()
+		.and_then(|offset| rom.as_slice32().subslice_from(offset.get()))
+		.and_then(Slice32::cstr)
+		?;
+
+	calc_sort_key_2(version_str)
+}
+
+#[inline(never)]
+fn calc_sort_key_2(mut version_str: &Slice32) -> Option<NonZeroU64> {
+	fn parse_digit(ch: u8) -> Option<u8> {
+		match ch {
+			b'0'..=b'9' => Some(ch - b'0'),
+			_ => None,
+		}
+	}
+
+	fn parse_digits(digits: &Slice32) -> Option<u32> {
+		let mut result = 0;
+		for &digit in digits.as_ref().iter() {
+			result = result * 10 + parse_digit(digit)? as u32;
+		}
+		Some(result)
+	}
+
+	// DISREGARD\t\t!.!! (!! !!! !!!!)
+
+	if let Some(first_tab_pos) = version_str.find(Slice32::new(b"\t\t").unwrap())
+	{
+		version_str = version_str.subslice_from(first_tab_pos + 2).unwrap()
+	} else { return None }
+
+	// trim string to version
+	let (version_int, date_part) =
+	if let [a, b'.', b, c, b' ', b'(', ref rest @ .., b')'] = *version_str.as_ref() {
+		let (a, b, c) = (parse_digit(a)?, parse_digit(b)?, parse_digit(c)?);
+		(
+			(a as u64 * 100 + b as u64 * 10 + c as u64) * 1_000_00_00,
+			Slice32::new(rest).unwrap()
+		)
+	} else { return None };
+
+	// parse date
+	const UNKNOWN_DATE: u64 = 999_99_99;
+	macro_rules! unknown_date {
+		() => { Some(NonZeroU64::new(version_int | UNKNOWN_DATE).unwrap()) };
+	}
+
+	let year = if let Some(year_raw) = date_part.subslice_last(4)
+		.and_then(|s| parse_digits(s))
+	{
+		year_raw.saturating_sub(1900)
+	} else { return unknown_date!() };
+
+	// RISC OS 3.19 has the date without a leading 0 digit :(
+	let Some(month_part) = (if let [_, b' ', _,_,_, b' ', ..] = *date_part.as_ref() {
+		date_part.subslice(2..5) // should never fail
+	} else {
+		date_part.subslice(3..6) // could fail. we've checked nothing here
+	}) else { return unknown_date!() };
+
+	let month = match month_part.as_ref() {
+		b"Jan" => 1u8,
+		b"Feb" => 2,
+		b"Mar" => 3,
+		b"Apr" => 4,
+		b"May" => 5,
+		b"Jun" => 6,
+		b"Jul" => 7,
+		b"Aug" => 8,
+		b"Sep" => 9,
+		b"Oct" => 10,
+		b"Nov" => 11,
+		b"Dec" => 12,
+		_ => return unknown_date!()
+	};
+
+	let Some(date) = (match *date_part.as_ref() {
+		[d, b' ', ..] => parse_digit(d).map(|d| d as u32),
+		[_d1, _d2, b' ', ..] => parse_digits(date_part.subslice(0..2).unwrap()),
+		_ => None
+	}) else {
+		return unknown_date!()
+	};
+
+	let full = version_int + (year as u64 * 1_00_00) + (month as u64 * 1_00) + date as u64;
+	debug_assert!(full != 0);
+	NonZeroU64::new(full)
 }
 
 impl Deref for Rom {
@@ -323,3 +434,24 @@ impl<'a> Module<'a> {
 	pub const fn offset(&self) -> u32 { self.offset }
 }
 
+#[cfg(test)]
+mod test {
+    use crate::Slice32;
+
+	#[test]
+	fn sort_key() {
+		for (expect, from) in [
+			(Some(3110920929), b"RISC OS\t\t3.11 (29 Sep 1992)".as_slice()),
+			(Some(9891231122), b"RISC OS\t\t9.89 (22 Nov 2023)"),
+			(Some(2970501001), b"Unnamed German OS\t\t2.97 (1 Oct 1950)"), // no leading date 0
+
+			(None, b"No tabs"),
+			(None, b"Just one tab\t1.23 (11 Jan 2000)"),
+			(None, b"No open paren\t\t1.11 23 Feb 2001"),
+			(None, b"Truncated\t\t1.00 (01 Jan 2000"),
+		] {
+			let slice = Slice32::new(from).unwrap();
+			assert_eq!(expect, super::calc_sort_key_2(slice).map(|n| n.get()));
+		}
+	}
+}
