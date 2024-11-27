@@ -86,6 +86,16 @@ impl Slice32 {
 		})
 	}
 
+	/// Returns a subslice of the last `n` bytes of `self`, if the slice is at least that length.
+	pub fn subslice_last(&self, n: u32) -> Option<&Self> {
+		if let Some(start) = self.len().checked_sub(n) {
+			Some(unsafe {
+				// SAFETY: we've checked that `self` is big enough, and values are in range
+				self.subslice_unchecked(start..self.len())
+			})
+		} else { None }
+	}
+
 	/// Subslices `self` by removing `new_start` bytes from the front.
 	#[inline]
 	pub fn subslice_from(&self, new_start: u32) -> Option<&Self> {
@@ -112,6 +122,22 @@ impl Slice32 {
 			// SAFETY: `rem` is a 1-truncated version of `self` and meets length criterion
 			Slice32::new_unchecked(rem)
 		}))
+	}
+
+	#[inline]
+	pub fn split_at(&self, mid: u32) -> (&Slice32, &Slice32) {
+		self.split_at_checked(mid).expect("midpoint out of range")
+	}
+
+	#[inline]
+	pub fn split_at_checked(&self, mid: u32) -> Option<(&Slice32, &Slice32)> {
+		if mid > self.len() { return None; }
+		Some(unsafe {
+			// SAFETY: `a` and `b` came from a Slice32, so they can't be out of range, and we've
+			// checked that `mid` is in range
+			let (a, b) = self.0.split_at_unchecked(mid as usize);
+			(Slice32::new_unchecked(a), Slice32::new_unchecked(b))
+		})
 	}
 
 	/// Interprets the start of `self` as being the first byte of a C-string, returning the rest.
@@ -156,6 +182,7 @@ impl<'a> Borrow<[u8]> for &'a Slice32 {
 }
 
 impl AsRef<[u8]> for Slice32 {
+	#[inline(always)]
 	fn as_ref(&self) -> &[u8] {
 		&self.0
 	}
@@ -187,6 +214,12 @@ mod uat {
 		assert_eq!(
 			Some(&DATA.as_ref()[..6] as *const [u8]),
 			DATA.subslice(0..6).map(|s| s as *const Slice32 as *const [u8]),
+		);
+
+		// more subslicing
+		assert_eq!(
+			Some(Slice32::new(b"efg").unwrap()),
+			Slice32::new(b"abcdefg").unwrap().subslice_last(3)
 		);
 
 		// cstring
