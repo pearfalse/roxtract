@@ -101,6 +101,7 @@ static RISC_OS_371: KnownRiscOsVersion = KnownRiscOsVersion {
 impl KnownRiscOsVersion {
 	/// Returns `true` if the byte data in `rom` matches `self`.
 	fn matches<M: Borrow<[u8]>>(&self, rom: &Rom<M>) -> bool {
+		#[inline(never)]
 		fn check_data(this: &KnownRiscOsVersion, rom_data: &[u8]) -> bool {
 			let Some(slice_end) = this.name_internal_pos
 				.checked_add(this.name_internal.len() as u32)
@@ -187,7 +188,7 @@ impl<'a> WordCursor<'a> {
 }
 
 /// Extension trait for searching through byte slices in application-specific ways.
-pub(crate) trait RomHeuristics {
+pub trait RomHeuristics {
 	/// Searches for `needle` in `self`, and returns a byte offset to it if found
 	fn find(&self, needle: &Slice32) -> Option<u32>;
 

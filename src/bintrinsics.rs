@@ -60,6 +60,8 @@ impl Slice32 {
 	///
 	/// This memory access does _not_ need to be aligned, physically or logically.
 	pub fn read_word(&self, idx: u32) -> Option<u32> {
+		// if `idx` is big enough to saturate, it's also way bigger than `i32::MAX`, so it won't
+		// be a problem
 		if idx.saturating_add(4) > self.len() {
 			return None;
 		}

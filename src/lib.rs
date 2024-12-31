@@ -4,11 +4,10 @@
 #![cfg_attr(debug_assertions, allow(dead_code))]
 
 mod heuristics;
-pub use heuristics::KnownRiscOsVersion;
+pub use heuristics::{KnownRiscOsVersion, RomHeuristics};
 
 mod bintrinsics;
 pub use bintrinsics::Slice32;
-use heuristics::RomHeuristics;
 
 use std::{
 	borrow::Borrow,
