@@ -402,7 +402,11 @@ impl<'a> Iterator for ModuleChain<'a> {
 
 		// sub 4 to remove chain length word (`module_len` includes this)
 		let r = module_start .. module_start.checked_sub(4)?.saturating_add(module_len);
-		let offset = r.start;
+		let Some(offset) = NonZeroU32::new(r.start) else {
+			debug_assert!(false, "this should never be 0!");
+			self.pos = u32::MAX;
+			return None;
+		};
 		Some(Module { bytes: self.rom.subslice(r)?, offset })
 	}
 }
@@ -412,7 +416,7 @@ impl<'a> FusedIterator for ModuleChain<'a> { }
 /// Metadata for a single module in the ROM image.
 pub struct Module<'a> {
 	bytes: &'a Slice32,
-	offset: u32,
+	offset: NonZeroU32,
 }
 
 impl<'a> Module<'a> {
@@ -430,12 +434,15 @@ impl<'a> Module<'a> {
 
 	/// Returns the offset of this module within the ROM image.
 	#[inline]
-	pub const fn offset(&self) -> u32 { self.offset }
+	pub const fn offset(&self) -> NonZeroU32 { self.offset }
 }
 
 #[cfg(test)]
 mod test {
+    use std::num::NonZeroU32;
+
     use crate::Slice32;
+    use assert_hex::assert_eq_hex;
 
 	#[test]
 	fn sort_key() {
@@ -452,5 +459,28 @@ mod test {
 			let slice = Slice32::new(from).unwrap();
 			assert_eq!(expect, super::calc_sort_key_2(slice).map(|n| n.get()));
 		}
+	}
+
+	#[test]
+	fn test_rom_1() {
+		static ROM: &[u8] = include_bytes!("../testrom1");
+
+		let rom = super::Rom::from_mem(ROM).unwrap();
+		assert_eq_hex!(NonZeroU32::new(0x20), rom.kernel_start());
+		assert_eq_hex!(NonZeroU32::new(0x3c), rom.module_chain_start());
+
+		let mut modules = rom.module_chain();
+		let module = modules.next().unwrap();
+
+		assert_eq_hex!(Some(b"UtilityModule".as_slice()), module.title().ok().map(AsRef::as_ref));
+		assert_eq_hex!(NonZeroU32::new(0x40).unwrap(), module.offset());
+
+		let module = modules.next().unwrap();
+		assert_eq_hex!(Some(b"Module2".as_slice()), module.title().ok().map(AsRef::as_ref));
+		assert_eq_hex!(NonZeroU32::new(0x94).unwrap(), module.offset());
+
+		let module = modules.next().unwrap();
+		assert_eq_hex!(Some(b"Module3".as_slice()), module.title().ok().map(AsRef::as_ref));
+		assert_eq_hex!(NonZeroU32::new(0xbc).unwrap(), module.offset());
 	}
 }
