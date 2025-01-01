@@ -479,7 +479,7 @@ mod test {
 		for (expect, from) in [
 			(Some(3110920929), b"RISC OS\t\t3.11 (29 Sep 1992)".as_slice()),
 			(Some(9891231122), b"RISC OS\t\t9.89 (22 Nov 2023)"),
-			(Some(2970501001), b"Unnamed German OS\t\t2.97 (1 Oct 1950)"), // no leading date 0
+			(Some(2970501001), b"Unnamed German OS\t\t2.97 (1. Oct 1950)"), // date is n., not nn
 
 			(None, b"No tabs"),
 			(None, b"Just one tab\t1.23 (11 Jan 2000)"),

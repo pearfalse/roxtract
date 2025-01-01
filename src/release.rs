@@ -121,17 +121,10 @@ impl ReleaseDate {
 			.and_then(|s| parse_digits(s))
 			.and_then(NonZeroU16::new)?;
 
-		// RISC OS 3.19 has the date without a leading 0 digit :(
-		let month_part = if let [_, b' ', _,_,_, b' ', ..] = *src.as_ref() {
-			src.subslice(2..5) // should never fail
-		} else {
-			src.subslice(3..6) // could fail. we've checked nothing here
-		}?;
-
-		let month = ReleaseMonth::parse(month_part)?;
+		let month = src.subslice(3..6).and_then(ReleaseMonth::parse)?;
 
 		let day  = match *src.as_ref() {
-			[d, b' ', ..]
+			[d, b'.', b' ', ..] // RISC OS 3.19 :(
 				=> parse_digit(d),
 			[_d1, _d2, b' ', ..]
 				=> parse_digits(src.subslice(0..2).unwrap())
@@ -242,13 +235,14 @@ mod tests {
 			ReleaseDate::parse(Slice32::new(b"31 Jan 1992").unwrap())
 		);
 
+		// RISC OS 3.19 shenanigans
 		assert_eq!(
 			Some(ReleaseDate {
 				day: NonZeroU8::new(6).unwrap(),
 				month: ReleaseMonth::April,
 				year: NonZeroU16::new(1472).unwrap(),
 			}),
-			ReleaseDate::parse(Slice32::new(b"6 Apr 1472").unwrap())
+			ReleaseDate::parse(Slice32::new(b"6. Apr 1472").unwrap())
 		);
 	}
 }
