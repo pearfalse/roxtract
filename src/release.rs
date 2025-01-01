@@ -85,6 +85,12 @@ impl Release {
 	}
 }
 
+impl fmt::Display for Release {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "{} ({})", self.version, self.date)
+	}
+}
+
 impl Version {
 	#[inline]
 	pub const fn major(self) -> u8 { (self.data.get() >> 8) as u8 }
@@ -101,6 +107,13 @@ impl fmt::Debug for Version {
 			.finish()
 	}
 }
+
+impl fmt::Display for Version {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "{}.{:02}", self.major(), self.minor())
+	}
+}
+
 
 impl ReleaseDate {
 	pub fn parse(src: &Slice32) -> Option<Self> {
@@ -139,23 +152,69 @@ impl ReleaseDate {
 	pub const fn year(self) -> NonZeroU16 { self.year }
 }
 
+impl fmt::Display for ReleaseDate {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "{:02} {} {:04}", self.day, self.month, self.year)
+	}
+}
+
+
 impl ReleaseMonth {
+	const SHORT_JAN: [u8; 3] = [b'J',b'a',b'n'];
+	const SHORT_FEB: [u8; 3] = [b'F',b'e',b'b'];
+	const SHORT_MAR: [u8; 3] = [b'M',b'a',b'r'];
+	const SHORT_APR: [u8; 3] = [b'A',b'p',b'r'];
+	const SHORT_MAY: [u8; 3] = [b'M',b'a',b'y'];
+	const SHORT_JUN: [u8; 3] = [b'J',b'u',b'n'];
+	const SHORT_JUL: [u8; 3] = [b'J',b'u',b'l'];
+	const SHORT_AUG: [u8; 3] = [b'A',b'u',b'g'];
+	const SHORT_SEP: [u8; 3] = [b'S',b'e',b'p'];
+	const SHORT_OCT: [u8; 3] = [b'O',b'c',b't'];
+	const SHORT_NOV: [u8; 3] = [b'N',b'o',b'v'];
+	const SHORT_DEC: [u8; 3] = [b'D',b'e',b'c'];
+
 	pub fn parse(src: &Slice32) -> Option<Self> {
 		match <[u8; 3]>::try_from(src.as_ref()).ok()? {
-			[b'J',b'a',b'n'] => Some(Self::January),
-			[b'F',b'e',b'b'] => Some(Self::February),
-			[b'M',b'a',b'r'] => Some(Self::March),
-			[b'A',b'p',b'r'] => Some(Self::April),
-			[b'M',b'a',b'y'] => Some(Self::May),
-			[b'J',b'u',b'n'] => Some(Self::June),
-			[b'J',b'u',b'l'] => Some(Self::July),
-			[b'A',b'u',b'g'] => Some(Self::August),
-			[b'S',b'e',b'p'] => Some(Self::September),
-			[b'O',b'c',b't'] => Some(Self::October),
-			[b'N',b'o',b'v'] => Some(Self::November),
-			[b'D',b'e',b'c'] => Some(Self::December),
+			Self::SHORT_JAN => Some(Self::January),
+			Self::SHORT_FEB => Some(Self::February),
+			Self::SHORT_MAR => Some(Self::March),
+			Self::SHORT_APR => Some(Self::April),
+			Self::SHORT_MAY => Some(Self::May),
+			Self::SHORT_JUN => Some(Self::June),
+			Self::SHORT_JUL => Some(Self::July),
+			Self::SHORT_AUG => Some(Self::August),
+			Self::SHORT_SEP => Some(Self::September),
+			Self::SHORT_OCT => Some(Self::October),
+			Self::SHORT_NOV => Some(Self::November),
+			Self::SHORT_DEC => Some(Self::December),
 			_ => None,
 		}
+	}
+}
+
+impl fmt::Display for ReleaseMonth {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		let short = match *self {
+			Self::January => &Self::SHORT_JAN,
+			Self::February => &Self::SHORT_FEB,
+			Self::March => &Self::SHORT_MAR,
+			Self::April => &Self::SHORT_APR,
+			Self::May => &Self::SHORT_MAY,
+			Self::June => &Self::SHORT_JUN,
+			Self::July => &Self::SHORT_JUL,
+			Self::August => &Self::SHORT_AUG,
+			Self::September => &Self::SHORT_SEP,
+			Self::October => &Self::SHORT_OCT,
+			Self::November => &Self::SHORT_NOV,
+			Self::December => &Self::SHORT_DEC,
+		};
+
+		let short = unsafe {
+			// SAFETY: each array only contains printable ASCII characters
+			core::str::from_utf8_unchecked(short)
+		};
+
+		fmt::Display::fmt(short, f)
 	}
 }
 
