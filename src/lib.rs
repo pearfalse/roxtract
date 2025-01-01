@@ -9,6 +9,9 @@ pub use heuristics::{KnownRiscOsVersion, RomHeuristics};
 mod bintrinsics;
 pub use bintrinsics::Slice32;
 
+mod release;
+pub use release::{Release, Version, ReleaseDate};
+
 use std::{
 	borrow::Borrow,
 	cell::Cell,
@@ -103,6 +106,7 @@ pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 
 	kernel_start: CachedOffset,
 	kernel_version_str_pos: Cell<Option<NonZeroU32>>,
+	kernel_version: Cell<Option<Release>>,
 	module_chain_start: CachedOffset,
 	version_name_str: CachedOffset,
 	crc32_hash: Cell<Option<u32>>,
@@ -135,6 +139,7 @@ impl Rom<Box<[u8]>> {
 
 			kernel_start: Cell::default(),
 			kernel_version_str_pos: Cell::default(),
+			kernel_version: Cell::default(),
 			module_chain_start: Cell::default(),
 			version_name_str: Cell::default(),
 			crc32_hash: Cell::default(),
@@ -157,6 +162,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 
 			kernel_start: Cell::default(),
 			kernel_version_str_pos: Cell::default(),
+			kernel_version: Cell::default(),
 			module_chain_start: Cell::default(),
 			version_name_str: Cell::default(),
 			crc32_hash: Cell::default(),
@@ -210,10 +216,18 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		})
 	}
 
+	/// Returns a byte slice to the kernel version string (usually of the form
+	/// `{OS name}\t\tV.VV (DD Mmm YYYY)`).
 	pub fn kernel_version_str(&self) -> Option<&Slice32> {
 		self.kernel_version_str_pos()
 			.and_then(|pos| self.as_slice32().subslice_from(pos.get()))
 			.and_then(Slice32::cstr)
+	}
+
+	/// Returns the kernel release information.
+	pub fn kernel_version(&self) -> Option<Release> {
+		self.recell_offset(&self.kernel_version, ||
+			self.kernel_version_str().and_then(Release::parse))
 	}
 
 	/// Returns the offset of the entry into the module chain, or `None` if `UtilityModule` wasn't
@@ -261,6 +275,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 			data: self.as_slice32(),
 			kernel_start: self.kernel_start.clone(),
 			kernel_version_str_pos: self.kernel_start.clone(),
+			kernel_version: self.kernel_version.clone(),
 			module_chain_start: self.module_chain_start.clone(),
 			version_name_str: self.version_name_str.clone(),
 			crc32_hash: self.crc32_hash.clone(),
@@ -310,94 +325,23 @@ impl Recell for NonZeroU64 {
 // dd = date of release (01..=31)
 #[inline(never)]
 fn calc_sort_key<M: Borrow<[u8]>>(rom: &Rom<M>) -> Option<NonZeroU64> {
-	let version_str = rom.kernel_version_str_pos()
-		.and_then(|offset| rom.as_slice32().subslice_from(offset.get()))
-		.and_then(Slice32::cstr)
-		?;
-
-	calc_sort_key_2(version_str)
+	rom.kernel_version().map(calc_sort_key_2)
 }
 
 #[inline(never)]
-fn calc_sort_key_2(mut version_str: &Slice32) -> Option<NonZeroU64> {
-	fn parse_digit(ch: u8) -> Option<u8> {
-		match ch {
-			b'0'..=b'9' => Some(ch - b'0'),
-			_ => None,
-		}
-	}
+#[allow(clippy::inconsistent_digit_grouping)]
+fn calc_sort_key_2(release: Release) -> NonZeroU64 {
+	let version_int = release.version.major() as u64 * 100 + release.version.minor() as u64;
 
-	fn parse_digits(digits: &Slice32) -> Option<u32> {
-		let mut result = 0;
-		for &digit in digits.as_ref().iter() {
-			result = result * 10 + parse_digit(digit)? as u32;
-		}
-		Some(result)
-	}
+	let date_int = (release.date.year().get() as u64).saturating_sub(1900).min(999) * 1_00_00
+		+
+		release.date.month() as u64 * 100
+		+
+		release.date.day().get() as u64;
 
-	// DISREGARD\t\t!.!! (!! !!! !!!!)
-
-	if let Some(first_tab_pos) = version_str.find(Slice32::new(b"\t\t").unwrap())
-	{
-		version_str = version_str.subslice_from(first_tab_pos + 2).unwrap()
-	} else { return None }
-
-	// trim string to version
-	let (version_int, date_part) =
-	if let [a, b'.', b, c, b' ', b'(', ref rest @ .., b')'] = *version_str.as_ref() {
-		let (a, b, c) = (parse_digit(a)?, parse_digit(b)?, parse_digit(c)?);
-		(
-			(a as u64 * 100 + b as u64 * 10 + c as u64) * 1_000_00_00,
-			Slice32::new(rest).unwrap()
-		)
-	} else { return None };
-
-	// parse date
-	const UNKNOWN_DATE: u64 = 999_99_99;
-	macro_rules! unknown_date {
-		() => { Some(NonZeroU64::new(version_int | UNKNOWN_DATE).unwrap()) };
-	}
-
-	let year = if let Some(year_raw) = date_part.subslice_last(4)
-		.and_then(|s| parse_digits(s))
-	{
-		year_raw.saturating_sub(1900)
-	} else { return unknown_date!() };
-
-	// RISC OS 3.19 has the date without a leading 0 digit :(
-	let Some(month_part) = (if let [_, b' ', _,_,_, b' ', ..] = *date_part.as_ref() {
-		date_part.subslice(2..5) // should never fail
-	} else {
-		date_part.subslice(3..6) // could fail. we've checked nothing here
-	}) else { return unknown_date!() };
-
-	let month = match month_part.as_ref() {
-		b"Jan" => 1u8,
-		b"Feb" => 2,
-		b"Mar" => 3,
-		b"Apr" => 4,
-		b"May" => 5,
-		b"Jun" => 6,
-		b"Jul" => 7,
-		b"Aug" => 8,
-		b"Sep" => 9,
-		b"Oct" => 10,
-		b"Nov" => 11,
-		b"Dec" => 12,
-		_ => return unknown_date!()
-	};
-
-	let Some(date) = (match *date_part.as_ref() {
-		[d, b' ', ..] => parse_digit(d).map(|d| d as u32),
-		[_d1, _d2, b' ', ..] => parse_digits(date_part.subslice(0..2).unwrap()),
-		_ => None
-	}) else {
-		return unknown_date!()
-	};
-
-	let full = version_int + (year as u64 * 1_00_00) + (month as u64 * 1_00) + date as u64;
+	let full = version_int * 1_000_00_00 + date_int;
 	debug_assert!(full != 0);
-	NonZeroU64::new(full)
+	NonZeroU64::new(full).unwrap()
 }
 
 impl Deref for Rom {
@@ -513,8 +457,9 @@ mod test {
 			(None, b"No open paren\t\t1.11 23 Feb 2001"),
 			(None, b"Truncated\t\t1.00 (01 Jan 2000"),
 		] {
-			let slice = Slice32::new(from).unwrap();
-			assert_eq!(expect, super::calc_sort_key_2(slice).map(|n| n.get()));
+			let result = Slice32::new(from).and_then(crate::Release::parse)
+				.map(|r| super::calc_sort_key_2(r).get());
+			assert_eq!(expect, result);
 		}
 	}
 
