@@ -1,7 +1,7 @@
 use std::{
 	borrow::Borrow,
 	mem::transmute,
-	ops::Range,
+	ops::{Index, IndexMut, Range},
 	slice::from_raw_parts,
 };
 
@@ -155,6 +155,11 @@ impl Slice32 {
 		})
 	}
 
+	/// Returns the index of the first occurrence of a particular character.
+	pub fn index_of(&self, ch: u8) -> Option<u32> {
+		self.0.iter().position(|b| *b == ch).map(|i| i as u32)
+	}
+
 
 	unsafe fn subslice_unchecked(&self, range: Range<u32>) -> &Self {
 		unsafe {
@@ -187,6 +192,22 @@ impl AsRef<[u8]> for Slice32 {
 	#[inline(always)]
 	fn as_ref(&self) -> &[u8] {
 		&self.0
+	}
+}
+
+impl Index<u32> for Slice32 {
+	type Output = u8;
+
+	#[inline]
+	fn index(&self, index: u32) -> &Self::Output {
+		self.0.index(index as usize)
+	}
+}
+
+impl IndexMut<u32> for Slice32 {
+	#[inline]
+	fn index_mut(&mut self, index: u32) -> &mut Self::Output {
+		self.0.index_mut(index as usize)
 	}
 }
 
