@@ -24,10 +24,9 @@ use std::{
 	path::Path,
 };
 
-
-type Offset = NonZeroU32;
 // NonZeroU32::MAX represents 'cached find failure'
-type CachedOffset = Cell<Option<Offset>>;
+type Offset = NonZeroU32;
+type Cached<T> = Cell<Option<T>>;
 
 /// Reasons why Roxtract will refuse to load a ROM image file.
 #[derive(Debug)]
@@ -104,14 +103,14 @@ impl Error for RomDecodeError { }
 pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 	data: M,
 
-	kernel_start: CachedOffset,
-	kernel_version_str_pos: Cell<Option<NonZeroU32>>,
-	kernel_version: Cell<Option<Release>>,
-	module_chain_start: CachedOffset,
-	version_name_str: CachedOffset,
-	crc32_hash: Cell<Option<u32>>,
-	sort_key: Cell<Option<NonZeroU64>>,
-	publisher_range: Cell<Option<Range<NonZeroU32>>>,
+	kernel_start: Cached<Offset>,
+	kernel_version_str_pos: Cached<NonZeroU32>,
+	kernel_version: Cached<Release>,
+	module_chain_start: Cached<Offset>,
+	version_name_str: Cached<Offset>,
+	crc32_hash: Cached<u32>,
+	sort_key: Cached<NonZeroU64>,
+	publisher_range: Cached<Range<NonZeroU32>>,
 }
 
 const ROM_LIMIT: u32 = 12 << 20; // 12 MiB limit in the Archimedes memory map
@@ -137,14 +136,14 @@ impl Rom<Box<[u8]>> {
 		Ok(Rom {
 			data,
 
-			kernel_start: Cell::default(),
-			kernel_version_str_pos: Cell::default(),
-			kernel_version: Cell::default(),
-			module_chain_start: Cell::default(),
-			version_name_str: Cell::default(),
-			crc32_hash: Cell::default(),
-			sort_key: Cell::default(),
-			publisher_range: Cell::default()
+			kernel_start: Cached::default(),
+			kernel_version_str_pos: Cached::default(),
+			kernel_version: Cached::default(),
+			module_chain_start: Cached::default(),
+			version_name_str: Cached::default(),
+			crc32_hash: Cached::default(),
+			sort_key: Cached::default(),
+			publisher_range: Cached::default()
 		})
 	}
 }
@@ -160,14 +159,14 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		Ok(Rom {
 			data: mem,
 
-			kernel_start: Cell::default(),
-			kernel_version_str_pos: Cell::default(),
-			kernel_version: Cell::default(),
-			module_chain_start: Cell::default(),
-			version_name_str: Cell::default(),
-			crc32_hash: Cell::default(),
-			sort_key: Cell::default(),
-			publisher_range: Cell::default()
+			kernel_start: Cached::default(),
+			kernel_version_str_pos: Cached::default(),
+			kernel_version: Cached::default(),
+			module_chain_start: Cached::default(),
+			version_name_str: Cached::default(),
+			crc32_hash: Cached::default(),
+			sort_key: Cached::default(),
+			publisher_range: Cached::default()
 		})
 	}
 }
@@ -183,7 +182,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		}
 	}
 
-	fn recell_offset<T: Recell, F: FnOnce() -> Option<T>>(&self, cell: &Cell<Option<T>>, find: F)
+	fn recell_offset<T: Recell, F: FnOnce() -> Option<T>>(&self, cell: &Cached<T>, find: F)
 	-> Option<T> {
 		// TODO: this needs to support `find` coercing `None` to `::MAX`
 		if let cached @ Some(_) = cell.get() {
@@ -294,7 +293,7 @@ trait Clone2 : Sized {
 	fn clone(&self) -> Self;
 }
 
-impl<T: Clone> Clone2 for Cell<Option<Range<T>>> {
+impl<T: Clone> Clone2 for Cached<Range<T>> {
 	fn clone(&self) -> Self {
 		let as_ref = unsafe {
 			// SAFETY: we won't mutate the original cell, so taking a shared ref to its contents is
