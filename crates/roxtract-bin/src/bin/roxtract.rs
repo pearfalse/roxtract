@@ -49,19 +49,24 @@ fn main() -> Result<(), Box<dyn Error>> {
 	if let Some(known) = KnownRiscOsVersion::find(&rom) {
 		println!("ROM appears to be {}", known.name_high_level);
 	} else {
-		println!("ROM image not recognised; it may be modified or corrupt");
+		println!("ROM image not recognised; it may be modified or corrupted");
 	}
 	println!("Kernel release info (name, release): {:?}, {:?}",
 		rom.os_name(), rom.kernel_version());
 	println!("Kernel starts at {:04x}", rom.kernel_start().or_print("[not found]"));
-	println!("Module chain starts at {:04x}", rom.module_chain_start().or_print("[UtilityModule not found]"));
+	println!("Module chain starts at {:04x}", rom.module_chain_start()
+		.ok().or_print("[UtilityModule not found]"));
 
-	for module in rom.module_chain() {
-		print!("module: ");
-		for ch in module.title()?.as_ref() {
-			print!("{}", (*ch as char).escape_default())
+	if let Ok(chain) = rom.module_chain() {
+		for module in chain {
+			print!("module: ");
+			for ch in module.title()?.as_ref() {
+				print!("{}", (*ch as char).escape_default())
+			}
+			println!(" (size {} bytes) at {:06x}", module.data().len(), module.offset());
 		}
-		println!(" (size {} bytes) at {:06x}", module.data().len(), module.offset());
+	} else {
+		println!("could not find start of module chain");
 	}
 
 	Ok(())

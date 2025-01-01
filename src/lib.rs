@@ -255,12 +255,14 @@ impl<M: Borrow<[u8]>> Rom<M> {
 
 	/// Returns the offset of the entry into the module chain, or `None` if `UtilityModule` wasn't
 	/// found.
-	pub fn module_chain_start(&self) -> Option<Offset> {
-		self.recell_offset(&self.module_chain_start, ||
+	pub fn module_chain_start(&self) -> Result<Offset, RomDecodeError> {
+		let found = self.recell_offset(&self.module_chain_start, ||
 			self.as_slice32().find_offset_to(Slice32::new(b"UtilityModule\0").unwrap(), 0x10)
 			.and_then(|n| n.checked_sub(4))
 			.and_then(NonZeroU32::new)
-		)
+		);
+
+		found.ok_or(RomDecodeError::UtilityModuleNotFound)
 	}
 
 	/// Returns the CRC32 hash of the ROM image.
@@ -288,8 +290,8 @@ impl<M: Borrow<[u8]>> Rom<M> {
 	}
 
 	/// Returns an iterator over all modules in the ROM chain.
-	pub fn module_chain(&self) -> ModuleChain<'_> {
-		ModuleChain::new(self, self.module_chain_start())
+	pub fn module_chain(&self) -> Result<ModuleChain<'_>, RomDecodeError> {
+		self.module_chain_start().map(|addr| ModuleChain::new(self, addr))
 	}
 
 	/// Returns a `Rom` object that transparently borrows the data of `self` as a `Slice32`.
@@ -396,8 +398,8 @@ pub struct ModuleChain<'a> {
 }
 
 impl<'a> ModuleChain<'a> {
-	fn new<M: Borrow<[u8]>>(rom: &'a Rom<M>, start: Option<Offset>) -> Self {
-		ModuleChain { rom: rom.as_slice32(), pos: start.map(NonZeroU32::get).unwrap_or(u32::MAX) }
+	fn new<M: Borrow<[u8]>>(rom: &'a Rom<M>, start: Offset) -> Self {
+		ModuleChain { rom: rom.as_slice32(), pos: start.get() }
 	}
 
 	#[inline]
@@ -495,9 +497,9 @@ mod test {
 
 		let rom = super::Rom::from_mem(ROM_TEST1).unwrap();
 		assert_eq_hex!(NonZeroU32::new(0x20), rom.kernel_start());
-		assert_eq_hex!(NonZeroU32::new(0x5c), rom.module_chain_start());
+		assert_eq_hex!(NonZeroU32::new(0x5c), rom.module_chain_start().ok());
 
-		let mut modules = rom.module_chain();
+		let mut modules = rom.module_chain().unwrap();
 		let module = modules.next().unwrap();
 
 		assert_eq_hex!(Some(b"UtilityModule".as_slice()), module.title().ok().map(AsRef::as_ref));
