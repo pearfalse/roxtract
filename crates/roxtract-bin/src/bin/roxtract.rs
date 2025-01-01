@@ -51,6 +51,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 	} else {
 		println!("ROM image not recognised; it may be modified or corrupt");
 	}
+	println!("Kernel release info (name, release): {:?}, {:?}",
+		rom.os_name(), rom.kernel_version());
 	println!("Kernel starts at {:04x}", rom.kernel_start().or_print("[not found]"));
 	println!("Module chain starts at {:04x}", rom.module_chain_start().or_print("[UtilityModule not found]"));
 

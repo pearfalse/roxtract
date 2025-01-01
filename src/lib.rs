@@ -197,11 +197,25 @@ impl<M: Borrow<[u8]>> Rom<M> {
 
 	/// Returns the offset of the kernel in the ROM image, or `None` if it wasn't found.
 	pub fn kernel_start(&self) -> Option<Offset> {
-		self.recell_offset(&self.kernel_start,
-			|| self.as_slice32().find(Slice32::new(b"MODULE#\0").unwrap())
-			.and_then(|p| p.checked_add(8).filter(|n| *n < self.as_slice32().len())
-			.and_then(NonZeroU32::new)
-				))
+		let is_in_range = {
+			let len = self.as_slice32().len();
+			move |pos: &u32| *pos < len
+		};
+
+		self.recell_offset(&self.kernel_start, || {
+			let mut end_of_module0 = self.as_slice32().find(Slice32::new(b"MODULE#\0").unwrap())
+				.and_then(|p| p.checked_add(8).filter(is_in_range))?;
+
+			// Arthur 0.x up through RISC OS 2.00 have two extra non-zero words between `MODULE#0\0`
+			// and the faux-module header; skip over them if present
+			let mut word_skip = 2;
+			while word_skip > 0 && self.as_slice32().read_word(end_of_module0)? != 0 {
+				end_of_module0 = end_of_module0.checked_add(4).filter(is_in_range)?;
+				word_skip -= 1;
+			}
+
+			NonZeroU32::new(end_of_module0)
+		})
 	}
 
 	fn kernel_version_str_pos(&self) -> Option<NonZeroU32> {
@@ -454,6 +468,10 @@ mod test {
     use crate::Slice32;
     use assert_hex::assert_eq_hex;
 
+	static ROM_TEST1: &[u8] = include_bytes!("../testrom1");
+    static ROM_RO3: &[u8] = include_bytes!("../testrom_kernelonly");
+    static ROM_RO200_KERNEL: &[u8] = include_bytes!("../testrom_ro200_words");
+
 	#[test]
 	fn sort_key() {
 		for (expect, from) in [
@@ -474,41 +492,51 @@ mod test {
 
 	#[test]
 	fn test_rom_1() {
-		static ROM: &[u8] = include_bytes!("../testrom1");
 
-		let rom = super::Rom::from_mem(ROM).unwrap();
+		let rom = super::Rom::from_mem(ROM_TEST1).unwrap();
 		assert_eq_hex!(NonZeroU32::new(0x20), rom.kernel_start());
-		assert_eq_hex!(NonZeroU32::new(0x3c), rom.module_chain_start());
+		assert_eq_hex!(NonZeroU32::new(0x5c), rom.module_chain_start());
 
 		let mut modules = rom.module_chain();
 		let module = modules.next().unwrap();
 
 		assert_eq_hex!(Some(b"UtilityModule".as_slice()), module.title().ok().map(AsRef::as_ref));
-		assert_eq_hex!(NonZeroU32::new(0x40).unwrap(), module.offset());
+		assert_eq_hex!(NonZeroU32::new(0x60).unwrap(), module.offset());
 
 		let module = modules.next().unwrap();
 		assert_eq_hex!(Some(b"Module2".as_slice()), module.title().ok().map(AsRef::as_ref));
-		assert_eq_hex!(NonZeroU32::new(0x94).unwrap(), module.offset());
+		assert_eq_hex!(NonZeroU32::new(0xb4).unwrap(), module.offset());
 
 		let module = modules.next().unwrap();
 		assert_eq_hex!(Some(b"Module3".as_slice()), module.title().ok().map(AsRef::as_ref));
-		assert_eq_hex!(NonZeroU32::new(0xbc).unwrap(), module.offset());
+		assert_eq_hex!(NonZeroU32::new(0xdc).unwrap(), module.offset());
 	}
 
 	#[test]
 	fn extract_version_from_kernel() {
-		static ROM: &[u8] = include_bytes!("../testrom_kernelonly");
+		let cases = [
+			(
+				ROM_RO3,
+				Some(&b"RISC OS\t\t3.45 (28 Feb 2084)"[..]),
+				Some(&b"RISC OS"[..]),
+				3451840228,
+			),
+			(
+				ROM_RO200_KERNEL,
+				Some(b"Arthur\t\t0.66 (02 Feb 2022)"),
+				Some(b"Arthur"),
+				0661220202,
+			),
+		];
 
-		let rom = super::Rom::from_mem(ROM).unwrap();
+		for (rom_data, full_ver, name, key) in cases {
+			let rom = super::Rom::from_mem(rom_data).unwrap();
 
-		assert_eq!(
-			Some(&b"RISC OS\t\t3.45 (28 Feb 2084)"[..]),
-			rom.kernel_version_str().map(Slice32::as_ref)
-		);
+			assert_eq!(full_ver, rom.kernel_version_str().map(Slice32::as_ref));
+			assert_eq!(name, rom.os_name().map(ascii::AsciiStr::as_bytes));
 
-		assert_eq!(Some(b"RISC OS".as_slice()), rom.os_name().map(ascii::AsciiStr::as_bytes));
-
-		assert_eq!(NonZeroU64::new(3451840228),
-			Some(rom.sort_key()).filter(|n| *n != NonZeroU64::MAX));
+			assert_eq!(NonZeroU64::new(key),
+				Some(rom.sort_key()).filter(|n| *n != NonZeroU64::MAX));
+		}
 	}
 }
