@@ -16,9 +16,11 @@ edition = "2021"
 
 [workspace.dependencies]
 crc-any = "2.5"
+ascii = "1.1"
 
 [dependencies]
 crc-any = { workspace = true }
+ascii = { workspace = true }
 
 [dev-dependencies]
 sptr = "0.3.2"

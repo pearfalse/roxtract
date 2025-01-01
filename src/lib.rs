@@ -4,6 +4,7 @@
 #![cfg_attr(debug_assertions, allow(dead_code))]
 
 mod heuristics;
+use ascii::AsciiStr;
 pub use heuristics::KnownRiscOsVersion;
 
 mod bintrinsics;
@@ -221,6 +222,15 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		self.kernel_version_str_pos()
 			.and_then(|pos| self.as_slice32().subslice_from(pos.get()))
 			.and_then(Slice32::cstr)
+	}
+
+	/// Returns the OS name (likely 'RISC OS' or 'Arthur').
+	pub fn os_name(&self) -> Option<&AsciiStr> {
+		use ascii::AsAsciiStr as _;
+
+		let basis = self.kernel_version_str()?;
+		let first_tab_at = basis.index_of(b'\t')?;
+		basis.subslice(0..first_tab_at)?.as_ref().as_ascii_str().ok()
 	}
 
 	/// Returns the kernel release information.
@@ -495,6 +505,8 @@ mod test {
 			Some(&b"RISC OS\t\t3.45 (28 Feb 2084)"[..]),
 			rom.kernel_version_str().map(Slice32::as_ref)
 		);
+
+		assert_eq!(Some(b"RISC OS".as_slice()), rom.os_name().map(ascii::AsciiStr::as_bytes));
 
 		assert_eq!(NonZeroU64::new(3451840228),
 			Some(rom.sort_key()).filter(|n| *n != NonZeroU64::MAX));
