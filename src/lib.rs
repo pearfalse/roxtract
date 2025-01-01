@@ -4,7 +4,7 @@
 #![cfg_attr(debug_assertions, allow(dead_code))]
 
 mod heuristics;
-pub use heuristics::{KnownRiscOsVersion, RomHeuristics};
+pub use heuristics::KnownRiscOsVersion;
 
 mod bintrinsics;
 pub use bintrinsics::Slice32;

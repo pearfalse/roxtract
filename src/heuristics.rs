@@ -187,21 +187,9 @@ impl<'a> WordCursor<'a> {
 	pub fn pos(&self) -> u32 { self.cursor_rel }
 }
 
-/// Extension trait for searching through byte slices in application-specific ways.
-pub trait RomHeuristics {
+impl Slice32 {
 	/// Searches for `needle` in `self`, and returns a byte offset to it if found
-	fn find(&self, needle: &Slice32) -> Option<u32>;
-
-	/// Finds the byte offset a word in `self` that functions as an offset to a copy of `needle`
-	/// in `self`.
-	///
-	/// The `offset` parameter allows shifting the base of the relative addressing earlier by
-	/// some number of bytes.
-	fn find_offset_to(&self, needle: &Slice32, offset: u32) -> Option<u32>;
-}
-
-impl RomHeuristics for Slice32 {
-	fn find_offset_to(&self, needle: &Slice32, offset: u32) -> Option<u32> {
+	pub fn find_offset_to(&self, needle: &Slice32, offset: u32) -> Option<u32> {
 		if self.len() < 4 { return None; }
 		let target = Self::find(self, needle)?;
 		let mut cursor = WordCursor::new_end(self.subslice(0..target)?);
@@ -215,7 +203,12 @@ impl RomHeuristics for Slice32 {
 		}
 	}
 
-	fn find(&self, needle: &Slice32) -> Option<u32> {
+	/// Finds the byte offset a word in `self` that functions as an offset to a copy of `needle`
+	/// in `self`.
+	///
+	/// The `offset` parameter allows shifting the base of the relative addressing earlier by
+	/// some number of bytes.
+	pub fn find(&self, needle: &Slice32) -> Option<u32> {
 		let mut haystack = self;
 		if haystack.is_empty() { return None; }
 		let (&needle_first, needle_rem) = needle.split_first()?;

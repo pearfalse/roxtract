@@ -1,7 +1,7 @@
 use core::fmt;
 use std::num::{NonZeroU16, NonZeroU8};
 
-use crate::{RomHeuristics as _, Slice32};
+use crate::Slice32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Release {
