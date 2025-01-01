@@ -17,7 +17,7 @@ use std::{
 	io::{self, Read},
 	iter::FusedIterator,
 	num::{NonZeroU32, NonZeroU64},
-	ops::Deref,
+	ops::{Deref, Range},
 	path::Path,
 };
 
@@ -102,10 +102,12 @@ pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 	data: M,
 
 	kernel_start: CachedOffset,
+	kernel_version_str_pos: Cell<Option<NonZeroU32>>,
 	module_chain_start: CachedOffset,
 	version_name_str: CachedOffset,
 	crc32_hash: Cell<Option<u32>>,
 	sort_key: Cell<Option<NonZeroU64>>,
+	publisher_range: Cell<Option<Range<NonZeroU32>>>,
 }
 
 const ROM_LIMIT: u32 = 12 << 20; // 12 MiB limit in the Archimedes memory map
@@ -131,11 +133,13 @@ impl Rom<Box<[u8]>> {
 		Ok(Rom {
 			data,
 
-			kernel_start: CachedOffset::default(),
-			module_chain_start: CachedOffset::default(),
-			version_name_str: CachedOffset::default(),
-			crc32_hash: Default::default(),
-			sort_key: Default::default(),
+			kernel_start: Cell::default(),
+			kernel_version_str_pos: Cell::default(),
+			module_chain_start: Cell::default(),
+			version_name_str: Cell::default(),
+			crc32_hash: Cell::default(),
+			sort_key: Cell::default(),
+			publisher_range: Cell::default()
 		})
 	}
 }
@@ -151,11 +155,13 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		Ok(Rom {
 			data: mem,
 
-			kernel_start: CachedOffset::default(),
-			module_chain_start: CachedOffset::default(),
-			version_name_str: CachedOffset::default(),
-			crc32_hash: Default::default(),
-			sort_key: Default::default(),
+			kernel_start: Cell::default(),
+			kernel_version_str_pos: Cell::default(),
+			module_chain_start: Cell::default(),
+			version_name_str: Cell::default(),
+			crc32_hash: Cell::default(),
+			sort_key: Cell::default(),
+			publisher_range: Cell::default()
 		})
 	}
 }
@@ -171,14 +177,15 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		}
 	}
 
-	fn recell_offset<F: FnOnce() -> Option<u32>>(&self, cell: &CachedOffset, find: F)
-	-> Option<Offset> {
+	fn recell_offset<T: Recell, F: FnOnce() -> Option<T>>(&self, cell: &Cell<Option<T>>, find: F)
+	-> Option<T> {
+		// TODO: this needs to support `find` coercing `None` to `::MAX`
 		if let cached @ Some(_) = cell.get() {
-			return cached.filter(|n| *n < NonZeroU32::MAX);
+			return cached.filter(|n| *n != T::FIND_FAILURE);
 		}
 
-		let result = find().and_then(NonZeroU32::new);
-		cell.set(Some(result.unwrap_or(NonZeroU32::MAX)));
+		let result = find();
+		cell.set(Some(result.unwrap_or(T::FIND_FAILURE)));
 		result
 	}
 
@@ -187,7 +194,26 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		self.recell_offset(&self.kernel_start,
 			|| self.as_slice32().find(Slice32::new(b"MODULE#\0").unwrap())
 			.and_then(|p| p.checked_add(8).filter(|n| *n < self.as_slice32().len())
+			.and_then(NonZeroU32::new)
 				))
+	}
+
+	fn kernel_version_str_pos(&self) -> Option<NonZeroU32> {
+		self.recell_offset(&self.kernel_version_str_pos, || {
+			let kernel_start = self.kernel_start()?;
+			let kernel_title_offset = kernel_start.checked_add(0x14) // title offset
+				.and_then(|o| self.as_slice32().read_word(o.get()))
+				.and_then(NonZeroU32::new)
+				?;
+
+			kernel_start.checked_add(kernel_title_offset.get())
+		})
+	}
+
+	pub fn kernel_version_str(&self) -> Option<&Slice32> {
+		self.kernel_version_str_pos()
+			.and_then(|pos| self.as_slice32().subslice_from(pos.get()))
+			.and_then(Slice32::cstr)
 	}
 
 	/// Returns the offset of the entry into the module chain, or `None` if `UtilityModule` wasn't
@@ -196,6 +222,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		self.recell_offset(&self.module_chain_start, ||
 			self.as_slice32().find_offset_to(Slice32::new(b"UtilityModule\0").unwrap(), 0x10)
 			.and_then(|n| n.checked_sub(4))
+			.and_then(NonZeroU32::new)
 		)
 	}
 
@@ -233,10 +260,12 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		Rom {
 			data: self.as_slice32(),
 			kernel_start: self.kernel_start.clone(),
+			kernel_version_str_pos: self.kernel_start.clone(),
 			module_chain_start: self.module_chain_start.clone(),
 			version_name_str: self.version_name_str.clone(),
 			crc32_hash: self.crc32_hash.clone(),
 			sort_key: self.sort_key.clone(),
+			publisher_range: self.publisher_range.clone(),
 		}
 	}
 
@@ -246,6 +275,34 @@ impl<M: Borrow<[u8]>> Rom<M> {
 	}
 }
 
+trait Clone2 : Sized {
+	fn clone(&self) -> Self;
+}
+
+impl<T: Clone> Clone2 for Cell<Option<Range<T>>> {
+	fn clone(&self) -> Self {
+		let as_ref = unsafe {
+			// SAFETY: we won't mutate the original cell, so taking a shared ref to its contents is
+			// fine
+			&*self.as_ptr()
+		}.as_ref();
+
+		Cell::new(as_ref.cloned())
+	}
+}
+
+trait Recell : Copy + Eq {
+	const FIND_FAILURE: Self;
+}
+
+impl Recell for NonZeroU32 {
+	const FIND_FAILURE: Self = NonZeroU32::MAX;
+}
+
+impl Recell for NonZeroU64 {
+	const FIND_FAILURE: Self = NonZeroU64::MAX;
+}
+
 // vvvYYYMMdd where
 // vvv = decimalised version, à la Wimp_Initialise (e.g. RISC OS 3.11 := 311, Arthur 0.30 := 30)
 // YYY = year of release - 1900 (e.g. RISC OS 2.01 := 90)
@@ -253,7 +310,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 // dd = date of release (01..=31)
 #[inline(never)]
 fn calc_sort_key<M: Borrow<[u8]>>(rom: &Rom<M>) -> Option<NonZeroU64> {
-	let version_str = rom.version_name_str.get()
+	let version_str = rom.kernel_version_str_pos()
 		.and_then(|offset| rom.as_slice32().subslice_from(offset.get()))
 		.and_then(Slice32::cstr)
 		?;
@@ -439,7 +496,7 @@ impl<'a> Module<'a> {
 
 #[cfg(test)]
 mod test {
-    use std::num::NonZeroU32;
+    use std::num::{NonZeroU32, NonZeroU64};
 
     use crate::Slice32;
     use assert_hex::assert_eq_hex;
@@ -482,5 +539,20 @@ mod test {
 		let module = modules.next().unwrap();
 		assert_eq_hex!(Some(b"Module3".as_slice()), module.title().ok().map(AsRef::as_ref));
 		assert_eq_hex!(NonZeroU32::new(0xbc).unwrap(), module.offset());
+	}
+
+	#[test]
+	fn extract_version_from_kernel() {
+		static ROM: &[u8] = include_bytes!("../testrom_kernelonly");
+
+		let rom = super::Rom::from_mem(ROM).unwrap();
+
+		assert_eq!(
+			Some(&b"RISC OS\t\t3.45 (28 Feb 2084)"[..]),
+			rom.kernel_version_str().map(Slice32::as_ref)
+		);
+
+		assert_eq!(NonZeroU64::new(3451840228),
+			Some(rom.sort_key()).filter(|n| *n != NonZeroU64::MAX));
 	}
 }
