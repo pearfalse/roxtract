@@ -391,6 +391,14 @@ impl<M: Borrow<[u8]>> Borrow<Slice32> for Rom<M> {
 	}
 }
 
+impl<M1: Borrow<[u8]>, M2: Borrow<[u8]>> PartialEq<Rom<M2>> for Rom<M1> {
+	fn eq(&self, other: &Rom<M2>) -> bool {
+		self.data.borrow() == other.data.borrow()
+	}
+}
+
+impl<M: Borrow<[u8]>> Eq for Rom<M> { }
+
 /// An iterator over each module in the ROM image.
 pub struct ModuleChain<'a> {
 	rom: &'a Slice32,
