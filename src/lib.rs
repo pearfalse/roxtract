@@ -111,7 +111,59 @@ pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 	version_name_str: Cached<Offset>,
 	crc32_hash: Cached<u32>,
 	sort_key: Cached<NonZeroU64>,
-	publisher_range: Cached<Range<NonZeroU32>>,
+}
+
+impl<M: Borrow<[u8]>> fmt::Debug for Rom<M> {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		#[repr(transparent)]
+		struct Len(u32);
+
+		impl Len {
+			#[inline]
+			fn new(data: &[u8]) -> Self {
+				debug_assert!(data.len() <= ROM_LIMIT as usize);
+				Self(data.len() as u32)
+			}
+		}
+
+		impl fmt::Debug for Len {
+			#[inline]
+			fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+				write!(f, "<data of length {} bytes>", self.0)
+			}
+		}
+
+		#[repr(transparent)]
+		struct MaybeCalc<T>(Cached<T>);
+
+		impl<T: Copy + fmt::Debug> fmt::Debug for MaybeCalc<T> {
+			fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+				match self.0.get() {
+					Some(value) => fmt::Debug::fmt(&value, f),
+					None => f.write_str("<not eval>")
+				}
+			}
+		}
+
+		#[repr(transparent)]
+		struct Hexable<T>(Cached<T>);
+
+		impl<T: Copy + fmt::LowerHex> fmt::Debug for Hexable<T>
+		where Cell<T>: Clone {
+			fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+				match self.0.get() {
+					Some(value) => write!(f, "&{:06x}", value),
+					None => f.write_str("<not eval>"),
+				}
+			}
+		}
+
+		f.debug_struct(stringify!(Rom))
+			.field("data", &Len::new(self.data.borrow()))
+			.field("kernel_start", &Hexable(self.kernel_start.clone()))
+			.field("release", &MaybeCalc(self.kernel_version.clone()))
+			.finish()
+	}
 }
 
 const ROM_LIMIT: u32 = 12 << 20; // 12 MiB limit in the Archimedes memory map
@@ -144,7 +196,6 @@ impl Rom<Box<[u8]>> {
 			version_name_str: Cached::default(),
 			crc32_hash: Cached::default(),
 			sort_key: Cached::default(),
-			publisher_range: Cached::default()
 		})
 	}
 }
@@ -167,7 +218,6 @@ impl<M: Borrow<[u8]>> Rom<M> {
 			version_name_str: Cached::default(),
 			crc32_hash: Cached::default(),
 			sort_key: Cached::default(),
-			publisher_range: Cached::default()
 		})
 	}
 }
@@ -305,7 +355,6 @@ impl<M: Borrow<[u8]>> Rom<M> {
 			version_name_str: self.version_name_str.clone(),
 			crc32_hash: self.crc32_hash.clone(),
 			sort_key: self.sort_key.clone(),
-			publisher_range: self.publisher_range.clone(),
 		}
 	}
 
@@ -520,6 +569,16 @@ mod test {
 		let module = modules.next().unwrap();
 		assert_eq_hex!(Some(b"Module3".as_slice()), module.title().ok().map(AsRef::as_ref));
 		assert_eq_hex!(NonZeroU32::new(0xdc).unwrap(), module.offset());
+	}
+
+	#[test]
+	fn show_rom_debug() {
+		let rom = super::Rom::from_mem(ROM_TEST1).unwrap();
+
+		println!("{:?}", &rom);
+		let _ = rom.kernel_start();
+		let _ = rom.kernel_version();
+		println!("{:?}", &rom);
 	}
 
 	#[test]
