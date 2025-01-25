@@ -184,7 +184,7 @@ impl<'a> WordCursor<'a> {
 
 		Some(unsafe {
 			let ptr = self.bytes.as_ref().as_ptr().add(self.cursor_rel as usize).cast::<u32>();
-			core::ptr::read_unaligned(ptr as *const u32)
+			core::ptr::read_unaligned(ptr)
 		})
 	}
 
@@ -240,7 +240,7 @@ impl Slice32 {
 			// first byte matches, compare remaining
 			if haystack.subslice(hs_range.clone()) == Some(needle_rem) {
 				// hs_range is relative to the subslice, not the original parameter
-				return Some(hs_range.start as u32 - 1 + hs_sub_start);
+				return Some(hs_range.start - 1 + hs_sub_start);
 			}
 
 			haystack = haystack.subslice_from(hs_range.start).unwrap();
@@ -334,7 +334,6 @@ pub(crate) fn kernel_start(data: &Slice32) -> Option<Offset> {
 }
 
 pub(crate) fn kernel_version_str_pos(data: &Slice32, kernel_start: Offset) -> Option<Offset> {
-	let kernel_start = kernel_start;
 	let kernel_title_offset = kernel_start.checked_add(0x14) // title offset
 		.and_then(|o| data.read_word(o.get()))
 		.and_then(NonZeroU32::new)

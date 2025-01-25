@@ -22,7 +22,7 @@ impl Slice32 {
 		if src.len() > Self::SIZE_LIMIT { return None; }
 		Some(unsafe {
 			// SAFETY: we're casting to a transparent wrapper type
-			transmute(src)
+			transmute::<&[u8], &Slice32>(src)
 		})
 	}
 
@@ -40,7 +40,7 @@ impl Slice32 {
 
 		Ok(unsafe {
 			// SAFETY: we're casting to a transparent wrapper type, via Box
-			transmute(src)
+			transmute::<Box<[u8]>, Box<Slice32>>(src)
 		})
 	}
 
@@ -97,12 +97,10 @@ impl Slice32 {
 
 	/// Returns a subslice of the last `n` bytes of `self`, if the slice is at least that length.
 	pub fn subslice_last(&self, n: u32) -> Option<&Self> {
-		if let Some(start) = self.len().checked_sub(n) {
-			Some(unsafe {
-				// SAFETY: we've checked that `self` is big enough, and values are in range
-				self.subslice_unchecked(start..self.len())
-			})
-		} else { None }
+		self.len().checked_sub(n).map(|start| unsafe {
+			// SAFETY: we've checked that `self` is big enough, and values are in range
+			self.subslice_unchecked(start..self.len())
+		})
 	}
 
 	/// Subslices `self` by removing `new_start` bytes from the front.
@@ -188,7 +186,7 @@ impl Borrow<[u8]> for Slice32 {
 	}
 }
 
-impl<'a> Borrow<[u8]> for &'a Slice32 {
+impl Borrow<[u8]> for &Slice32 {
 	#[inline(always)]
 	fn borrow(&self) -> &[u8] {
 		&self.0

@@ -249,8 +249,8 @@ impl<M: Borrow<[u8]>> Rom<M> {
 			return Err(RomLoadError::RomInvalidSize);
 		}
 
-		let heuristics = Heuristics::new(Slice32::new(&data).unwrap());
-		#[cfg(feature = "crc")] let crc32_hash = calc_hash(&data);
+		let heuristics = Heuristics::new(Slice32::new(data).unwrap());
+		#[cfg(feature = "crc")] let crc32_hash = calc_hash(data);
 
 		Ok(Rom {
 			data: mem,
@@ -272,7 +272,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 	}
 
 	/// Gets a reference to heuristic data derived from the ROM image.
-	pub fn heuristics(&self) -> &Heuristics { &*self.heuristics }
+	pub fn heuristics(&self) -> &Heuristics { &self.heuristics }
 
 	/// Returns a byte slice to the kernel version string (usually of the form
 	/// `{OS name}\t\tV.VV (DD Mmm YYYY)`).
@@ -301,17 +301,17 @@ impl<M: Borrow<[u8]>> Rom<M> {
 	}
 
 	/// Returns a `Rom` object that transparently borrows the data of `self` as a `Slice32`.
-	pub fn as_ref<'a>(&'a self) -> Rom<&'a Slice32> {
+	pub fn as_ref(&self) -> Rom<&Slice32> {
 		Rom {
 			data: self.as_slice32(),
-			#[cfg(feature = "crc")] crc32_hash: self.crc32_hash.clone(),
+			#[cfg(feature = "crc")] crc32_hash: self.crc32_hash,
 			heuristics: Rc::clone(&self.heuristics),
 		}
 	}
 
 	/// Returns a raw slice to the ROM image data.
 	pub fn as_slice(&self) -> &[u8] {
-		self.data.borrow().as_ref()
+		self.data.borrow()
 	}
 }
 
@@ -420,7 +420,7 @@ impl<'a> Iterator for ModuleChain<'a> {
 	}
 }
 
-impl<'a> FusedIterator for ModuleChain<'a> { }
+impl FusedIterator for ModuleChain<'_> { }
 
 /// Metadata for a single module in the ROM image.
 pub struct Module<'a> {
@@ -439,7 +439,7 @@ impl<'a> Module<'a> {
 
 	/// Returns a slice over the entire module contents.
 	#[inline]
-	pub const fn data(&self) -> &Slice32 { self.bytes }
+	pub const fn data(&self) -> &'a Slice32 { self.bytes }
 
 	/// Returns the offset of this module within the ROM image.
 	#[inline]

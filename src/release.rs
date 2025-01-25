@@ -146,7 +146,7 @@ impl fmt::Display for Version {
 impl ReleaseDate {
 	pub(crate) fn parse(src: &Slice32) -> Option<Self> {
 		let year = src.subslice_last(4)
-			.and_then(|s| parse_digits(s))
+			.and_then(parse_digits)
 			.and_then(NonZeroU16::new)?;
 
 		let month = src.subslice(3..6).and_then(ReleaseMonth::parse)?;
