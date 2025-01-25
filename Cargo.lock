@@ -69,7 +69,7 @@ dependencies = [
 
 [[package]]
 name = "roxtract"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ascii",
  "assert_hex",
@@ -79,7 +79,7 @@ dependencies = [
 
 [[package]]
 name = "roxtract-bin"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "gumdrop",
  "gumdrop_derive",
