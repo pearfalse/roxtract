@@ -250,23 +250,6 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		}
 	}
 
-	fn recell_offset<T: Recell, F: FnOnce() -> Option<T>>(&self, cell: &Cached<T>, find: F)
-	-> Option<T> {
-		// TODO: this needs to support `find` coercing `None` to `::MAX`
-		if let cached @ Some(_) = cell.get() {
-			return cached.filter(|n| *n != T::FIND_FAILURE);
-		}
-
-		let result = find();
-		cell.set(Some(result.unwrap_or(T::FIND_FAILURE)));
-		result
-	}
-
-	/// Returns the offset of the kernel in the ROM image, or `None` if it wasn't found.
-	pub fn kernel_start(&self) -> Option<Offset> {
-		self.heuristics.kernel_start
-	}
-
 	/// Returns a byte slice to the kernel version string (usually of the form
 	/// `{OS name}\t\tV.VV (DD Mmm YYYY)`).
 	pub fn kernel_version_str(&self) -> Option<&Slice32> {
