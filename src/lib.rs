@@ -23,6 +23,7 @@ use std::{
 	num::{NonZeroU32, NonZeroU64},
 	ops::{Deref, Range},
 	path::Path,
+	rc::Rc,
 };
 
 // NonZeroU32::MAX represents 'cached find failure'
@@ -104,13 +105,9 @@ impl Error for RomDecodeError { }
 pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 	data: M,
 
-	kernel_start: Cached<Offset>,
-	kernel_version_str_pos: Cached<NonZeroU32>,
-	kernel_version: Cached<Release>,
-	module_chain_start: Cached<Offset>,
-	version_name_str: Cached<Offset>,
 	crc32_hash: Cached<u32>,
-	sort_key: Cached<NonZeroU64>,
+
+	heuristics: Rc<Heuristics>,
 }
 
 impl<M: Borrow<[u8]>> fmt::Debug for Rom<M> {
@@ -134,11 +131,11 @@ impl<M: Borrow<[u8]>> fmt::Debug for Rom<M> {
 		}
 
 		#[repr(transparent)]
-		struct MaybeCalc<T>(Cached<T>);
+		struct MaybeCalc<T>(Option<T>);
 
 		impl<T: Copy + fmt::Debug> fmt::Debug for MaybeCalc<T> {
 			fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-				match self.0.get() {
+				match self.0 {
 					Some(value) => fmt::Debug::fmt(&value, f),
 					None => f.write_str("<not eval>")
 				}
@@ -146,12 +143,12 @@ impl<M: Borrow<[u8]>> fmt::Debug for Rom<M> {
 		}
 
 		#[repr(transparent)]
-		struct Hexable<T>(Cached<T>);
+		struct Hexable<T>(Option<T>);
 
 		impl<T: Copy + fmt::LowerHex> fmt::Debug for Hexable<T>
 		where Cell<T>: Clone {
 			fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-				match self.0.get() {
+				match self.0 {
 					Some(value) => write!(f, "&{:06x}", value),
 					None => f.write_str("<not eval>"),
 				}
@@ -160,9 +157,39 @@ impl<M: Borrow<[u8]>> fmt::Debug for Rom<M> {
 
 		f.debug_struct(stringify!(Rom))
 			.field("data", &Len::new(self.data.borrow()))
-			.field("kernel_start", &Hexable(self.kernel_start.clone()))
-			.field("release", &MaybeCalc(self.kernel_version.clone()))
+			.field("kernel_start", &Hexable(self.heuristics.kernel_start))
+			.field("release", &MaybeCalc(self.heuristics.kernel_version))
 			.finish()
+	}
+}
+
+#[derive(Debug)]
+pub struct Heuristics {
+	pub sort_key: NonZeroU64,
+	pub kernel_start: Option<Offset>,
+	pub kernel_version: Option<Release>,
+	pub kernel_version_str_pos: Option<Offset>,
+	pub module_chain_start: Option<Offset>,
+}
+
+impl Heuristics {
+	#[inline(never)]
+	fn new(data: &Slice32) -> Rc<Self> {
+		type Scope = Rom<Box<[u8]>>;
+
+		let kernel_start = Scope::kernel_start_impl(data);
+		let kernel_version_str_pos = kernel_start
+			.and_then(|ks| Scope::kernel_version_str_pos_impl(data, ks));
+		let kernel_version = Scope::kernel_version_str_impl(data, kernel_version_str_pos)
+				.and_then(Release::parse);
+
+		Rc::new(Heuristics {
+			sort_key: kernel_version.map(calc_sort_key_2).unwrap_or(NonZeroU64::MAX),
+			kernel_start,
+			kernel_version,
+			kernel_version_str_pos,
+			module_chain_start: Scope::module_chain_start_impl(data),
+		})
 	}
 }
 
@@ -186,16 +213,11 @@ impl Rom<Box<[u8]>> {
 		let mut data = vec![0u8; rom_len as usize].into_boxed_slice();
 		file.read_exact(&mut data)?;
 
+		let heuristics = Heuristics::new(Slice32::new(&data).unwrap());
 		Ok(Rom {
 			data,
-
-			kernel_start: Cached::default(),
-			kernel_version_str_pos: Cached::default(),
-			kernel_version: Cached::default(),
-			module_chain_start: Cached::default(),
-			version_name_str: Cached::default(),
 			crc32_hash: Cached::default(),
-			sort_key: Cached::default(),
+			heuristics,
 		})
 	}
 }
@@ -208,16 +230,11 @@ impl<M: Borrow<[u8]>> Rom<M> {
 			return Err(RomLoadError::RomInvalidSize);
 		}
 
+		let heuristics = Heuristics::new(Slice32::new(&data).unwrap());
 		Ok(Rom {
 			data: mem,
-
-			kernel_start: Cached::default(),
-			kernel_version_str_pos: Cached::default(),
-			kernel_version: Cached::default(),
-			module_chain_start: Cached::default(),
-			version_name_str: Cached::default(),
 			crc32_hash: Cached::default(),
-			sort_key: Cached::default(),
+			heuristics,
 		})
 	}
 }
@@ -247,44 +264,48 @@ impl<M: Borrow<[u8]>> Rom<M> {
 
 	/// Returns the offset of the kernel in the ROM image, or `None` if it wasn't found.
 	pub fn kernel_start(&self) -> Option<Offset> {
+		self.heuristics.kernel_start
+	}
+
+	fn kernel_start_impl(data: &Slice32) -> Option<Offset> {
 		let is_in_range = {
-			let len = self.as_slice32().len();
+			let len = data.len();
 			move |pos: &u32| *pos < len
 		};
 
-		self.recell_offset(&self.kernel_start, || {
-			let mut end_of_module0 = self.as_slice32().find(Slice32::new(b"MODULE#\0").unwrap())
-				.and_then(|p| p.checked_add(8).filter(is_in_range))?;
+		let mut end_of_module0 = data.find(Slice32::new(b"MODULE#\0").unwrap())
+			.and_then(|p| p.checked_add(8).filter(is_in_range))?;
 
-			// Arthur 0.x up through RISC OS 2.00 have two extra non-zero words between `MODULE#0\0`
-			// and the faux-module header; skip over them if present
-			let mut word_skip = 2;
-			while word_skip > 0 && self.as_slice32().read_word(end_of_module0)? != 0 {
-				end_of_module0 = end_of_module0.checked_add(4).filter(is_in_range)?;
-				word_skip -= 1;
-			}
+		// Arthur 0.x up through RISC OS 2.00 have two extra non-zero words between `MODULE#0\0`
+		// and the faux-module header; skip over them if present
+		let mut word_skip = 2;
+		while word_skip > 0 && data.read_word(end_of_module0)? != 0 {
+			end_of_module0 = end_of_module0.checked_add(4).filter(is_in_range)?;
+			word_skip -= 1;
+		}
 
-			NonZeroU32::new(end_of_module0)
-		})
+		NonZeroU32::new(end_of_module0)
 	}
 
-	fn kernel_version_str_pos(&self) -> Option<NonZeroU32> {
-		self.recell_offset(&self.kernel_version_str_pos, || {
-			let kernel_start = self.kernel_start()?;
-			let kernel_title_offset = kernel_start.checked_add(0x14) // title offset
-				.and_then(|o| self.as_slice32().read_word(o.get()))
-				.and_then(NonZeroU32::new)
-				?;
+	fn kernel_version_str_pos_impl(data: &Slice32, kernel_start: Offset) -> Option<Offset> {
+		let kernel_start = kernel_start;
+		let kernel_title_offset = kernel_start.checked_add(0x14) // title offset
+			.and_then(|o| data.read_word(o.get()))
+			.and_then(NonZeroU32::new)
+			?;
 
-			kernel_start.checked_add(kernel_title_offset.get())
-		})
+		kernel_start.checked_add(kernel_title_offset.get())
 	}
 
 	/// Returns a byte slice to the kernel version string (usually of the form
 	/// `{OS name}\t\tV.VV (DD Mmm YYYY)`).
 	pub fn kernel_version_str(&self) -> Option<&Slice32> {
-		self.kernel_version_str_pos()
-			.and_then(|pos| self.as_slice32().subslice_from(pos.get()))
+		Self::kernel_version_str_impl(self.as_slice32(), self.heuristics.kernel_version_str_pos)
+	}
+
+	fn kernel_version_str_impl(data: &Slice32, start_pos: Option<Offset>) -> Option<&Slice32> {
+		start_pos
+			.and_then(|pos| data.subslice_from(pos.get()))
 			.and_then(Slice32::cstr)
 	}
 
@@ -299,20 +320,19 @@ impl<M: Borrow<[u8]>> Rom<M> {
 
 	/// Returns the kernel release information.
 	pub fn kernel_version(&self) -> Option<Release> {
-		self.recell_offset(&self.kernel_version, ||
-			self.kernel_version_str().and_then(Release::parse))
+		self.kernel_version_str().and_then(Release::parse)
 	}
 
 	/// Returns the offset of the entry into the module chain, or `None` if `UtilityModule` wasn't
 	/// found.
 	pub fn module_chain_start(&self) -> Result<Offset, RomDecodeError> {
-		let found = self.recell_offset(&self.module_chain_start, ||
-			self.as_slice32().find_offset_to(Slice32::new(b"UtilityModule\0").unwrap(), 0x10)
+		self.heuristics.module_chain_start.ok_or(RomDecodeError::UtilityModuleNotFound)
+	}
+
+	fn module_chain_start_impl(data: &Slice32) -> Option<Offset> {
+			data.find_offset_to(Slice32::new(b"UtilityModule\0").unwrap(), 0x10)
 			.and_then(|n| n.checked_sub(4))
 			.and_then(NonZeroU32::new)
-		);
-
-		found.ok_or(RomDecodeError::UtilityModuleNotFound)
 	}
 
 	/// Returns the CRC32 hash of the ROM image.
@@ -332,11 +352,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 
 	/// Returns an integer key that can be used to sort multiple ROM images by version.
 	pub fn sort_key(&self) -> NonZeroU64 {
-		if let Some(already) = self.sort_key.get() { return already; }
-
-		let key = calc_sort_key(self).unwrap_or(NonZeroU64::MAX);
-		self.sort_key.set(Some(key));
-		key
+		self.heuristics.sort_key
 	}
 
 	/// Returns an iterator over all modules in the ROM chain.
@@ -348,13 +364,8 @@ impl<M: Borrow<[u8]>> Rom<M> {
 	pub fn as_ref<'a>(&'a self) -> Rom<&'a Slice32> {
 		Rom {
 			data: self.as_slice32(),
-			kernel_start: self.kernel_start.clone(),
-			kernel_version_str_pos: self.kernel_start.clone(),
-			kernel_version: self.kernel_version.clone(),
-			module_chain_start: self.module_chain_start.clone(),
-			version_name_str: self.version_name_str.clone(),
 			crc32_hash: self.crc32_hash.clone(),
-			sort_key: self.sort_key.clone(),
+			heuristics: Rc::clone(&self.heuristics),
 		}
 	}
 
@@ -382,6 +393,11 @@ impl<T: Clone> Clone2 for Cached<Range<T>> {
 
 trait Recell : Copy + Eq {
 	const FIND_FAILURE: Self;
+
+	#[inline]
+	fn or_failure(self) -> Option<Self> {
+		Some(self).filter(|s| *s != Self::FIND_FAILURE)
+	}
 }
 
 impl Recell for NonZeroU32 {
@@ -390,6 +406,21 @@ impl Recell for NonZeroU32 {
 
 impl Recell for NonZeroU64 {
 	const FIND_FAILURE: Self = NonZeroU64::MAX;
+}
+
+trait RecellExt {
+	type Inner;
+
+	fn unwrap_or_failure(self) -> Self::Inner;
+}
+
+impl<T: Recell> RecellExt for Option<T> {
+	type Inner = T;
+
+	#[inline]
+	fn unwrap_or_failure(self) -> Self::Inner {
+		self.unwrap_or(<T as Recell>::FIND_FAILURE)
+	}
 }
 
 // vvvYYYMMdd where
@@ -415,7 +446,7 @@ fn calc_sort_key_2(release: Release) -> NonZeroU64 {
 
 	let full = version_int * 1_000_00_00 + date_int;
 	debug_assert!(full != 0);
-	NonZeroU64::new(full).unwrap()
+	NonZeroU64::new(full).expect("UNPOSSIBLE: zero sort key")
 }
 
 impl Deref for Rom {
@@ -600,9 +631,12 @@ mod test {
 
 		for (rom_data, full_ver, name, key) in cases {
 			let rom = super::Rom::from_mem(rom_data).unwrap();
+			println!("case {}", full_ver.map(|b| b.escape_ascii().to_string()).unwrap_or_default());
 
 			assert_eq!(full_ver, rom.kernel_version_str().map(Slice32::as_ref));
 			assert_eq!(name, rom.os_name().map(ascii::AsciiStr::as_bytes));
+
+			println!("{:?}", rom.heuristics);
 
 			assert_eq!(NonZeroU64::new(key),
 				Some(rom.sort_key()).filter(|n| *n != NonZeroU64::MAX));
