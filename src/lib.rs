@@ -11,7 +11,7 @@ mod bintrinsics;
 pub use bintrinsics::Slice32;
 
 mod release;
-pub use release::{Release, Version, ReleaseDate};
+pub use release::{Release, Version, ReleaseDate, ReleaseMonth};
 
 use std::{
 	borrow::Borrow,
@@ -101,12 +101,15 @@ impl Error for RomDecodeError { }
 /// - Chain (linked list) of built-in modules, starting with `UtilityModule`;
 /// - Padding (and unknown trailing data in the last 12 bytes).
 ///
+/// Other hardware-compatible ROM images that are not RISC OS-alikes may be loaded, but most of
+/// the [heuristic analysis](Self::heuristics) will fail.
+///
 /// The ROM image has to be contiguous in system memory.
 pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 	data: M,
 	heuristics: Rc<Heuristics>,
 
-	#[cfg(feature = "crc")] crc32_hash: u32,
+	#[cfg(feature = "crc")] pub crc32_hash: u32,
 }
 
 impl<M: Borrow<[u8]>> fmt::Debug for Rom<M> {
@@ -162,6 +165,15 @@ impl<M: Borrow<[u8]>> fmt::Debug for Rom<M> {
 	}
 }
 
+/// Heuristic data obtained from analysing the ROM image.
+///
+/// Not all fields may be populated. This may happen if:
+///
+/// - the ROM image is corrupted, or not RISC OS / Arthur;
+/// - the ROM image is a custom retro build, and is structured differently enough that Roxtract
+///   can't understand its basic form;
+/// - other possible specific reasons (for example, Roxtract cannot locate the kernel in Arthur
+///   0.30).
 #[derive(Debug)]
 pub struct Heuristics {
 	/// An integer key that can be used to sort multiple ROM images by version.
@@ -316,11 +328,11 @@ impl<M: Borrow<[u8]>> Rom<M> {
 fn calc_sort_key(release: Release) -> NonZeroU64 {
 	let version_int = release.version.major() as u64 * 100 + release.version.minor() as u64;
 
-	let date_int = (release.date.year().get() as u64).saturating_sub(1900).min(999) * 1_00_00
+	let date_int = (release.date.year.get() as u64).saturating_sub(1900).min(999) * 1_00_00
 		+
-		release.date.month() as u64 * 100
+		release.date.month as u64 * 100
 		+
-		release.date.day().get() as u64;
+		release.date.day.get() as u64;
 
 	let full = version_int * 1_000_00_00 + date_int;
 	debug_assert!(full != 0);

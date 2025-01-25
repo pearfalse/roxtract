@@ -3,24 +3,38 @@ use std::num::{NonZeroU16, NonZeroU8};
 
 use crate::Slice32;
 
+/// Parsed release info for a ROM image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Release {
-	pub version: Version,
-	pub date: ReleaseDate,
+	#[allow(missing_docs)] pub version: Version,
+	#[allow(missing_docs)] pub date: ReleaseDate,
 }
 
+/// Parsed version information for a ROM image, derived from its `UtilityModule` help string.
+///
+/// This type supports any version that can be expressed as two `u8`s, where at least one of them
+/// is not zero.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Version {
 	data: NonZeroU16,
 }
 
+/// Parsed release date information for a ROM image.
+///
+/// Dates must be expressed in the form `DD MMM YYYY`, where
+///
+/// - `DD` is a two-digit date between 1 and 31, or a single-digit date followed by `.`;
+/// - `MMM` is the first three letters of the month name, with one leading capital letter (e.g.
+///   `Jan`, `Apr`);
+/// - `YYYY` is a four-digit year, no earlier than 1900.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReleaseDate {
-	day: NonZeroU8,
-	month: ReleaseMonth,
-	year: NonZeroU16,
+	#[allow(missing_docs)] pub day: NonZeroU8,
+	#[allow(missing_docs)] pub month: ReleaseMonth,
+	#[allow(missing_docs)] pub year: NonZeroU16,
 }
 
+#[allow(missing_docs)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReleaseMonth {
 	January = 1,
@@ -55,7 +69,7 @@ fn parse_digits(digits: &Slice32) -> Option<u16> {
 }
 
 impl Release {
-	pub fn parse(mut src: &Slice32) -> Option<Self> {
+	pub(crate) fn parse(mut src: &Slice32) -> Option<Self> {
 		// NAME\t\tV.VV (DD Mmm YYYY)
 
 		const TWO_TABS: &Slice32 = Slice32::new(b"\t\t").unwrap();
@@ -116,7 +130,7 @@ impl fmt::Display for Version {
 
 
 impl ReleaseDate {
-	pub fn parse(src: &Slice32) -> Option<Self> {
+	pub(crate) fn parse(src: &Slice32) -> Option<Self> {
 		let year = src.subslice_last(4)
 			.and_then(|s| parse_digits(s))
 			.and_then(NonZeroU16::new)?;
@@ -134,15 +148,6 @@ impl ReleaseDate {
 
 		Some(ReleaseDate { day, month, year })
 	}
-
-	#[inline]
-	pub const fn day(self) -> NonZeroU8 { self.day }
-
-	#[inline]
-	pub const fn month(self) -> ReleaseMonth { self.month }
-
-	#[inline]
-	pub const fn year(self) -> NonZeroU16 { self.year }
 }
 
 impl fmt::Display for ReleaseDate {
@@ -166,7 +171,7 @@ impl ReleaseMonth {
 	const SHORT_NOV: [u8; 3] = [b'N',b'o',b'v'];
 	const SHORT_DEC: [u8; 3] = [b'D',b'e',b'c'];
 
-	pub fn parse(src: &Slice32) -> Option<Self> {
+	pub(crate) fn parse(src: &Slice32) -> Option<Self> {
 		match <[u8; 3]>::try_from(src.as_ref()).ok()? {
 			Self::SHORT_JAN => Some(Self::January),
 			Self::SHORT_FEB => Some(Self::February),
