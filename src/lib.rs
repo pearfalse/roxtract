@@ -13,9 +13,6 @@ pub use bintrinsics::Slice32;
 mod release;
 pub use release::{Release, Version, ReleaseDate};
 
-#[cfg(feature = "crc")]
-mod crc;
-
 use std::{
 	borrow::Borrow,
 	cell::Cell,
@@ -109,7 +106,7 @@ pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 	data: M,
 	heuristics: Rc<Heuristics>,
 
-	#[cfg(feature = "crc")] crc32_hash: Cached<u32>,
+	#[cfg(feature = "crc")] crc32_hash: u32,
 }
 
 impl<M: Borrow<[u8]>> fmt::Debug for Rom<M> {
@@ -225,9 +222,11 @@ impl Rom<Box<[u8]>> {
 		file.read_exact(&mut data)?;
 
 		let heuristics = Heuristics::new(Slice32::new(&data).unwrap());
+		#[cfg(feature = "crc")] let crc32_hash = calc_hash(&data);
+
 		Ok(Rom {
 			data,
-			#[cfg(feature = "crc")] crc32_hash: Cached::default(),
+			#[cfg(feature = "crc")] crc32_hash,
 			heuristics,
 		})
 	}
@@ -242,9 +241,11 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		}
 
 		let heuristics = Heuristics::new(Slice32::new(&data).unwrap());
+		#[cfg(feature = "crc")] let crc32_hash = calc_hash(&data);
+
 		Ok(Rom {
 			data: mem,
-			#[cfg(feature = "crc")] crc32_hash: Cached::default(),
+			#[cfg(feature = "crc")] crc32_hash,
 			heuristics,
 		})
 	}
@@ -321,6 +322,14 @@ fn calc_sort_key(release: Release) -> NonZeroU64 {
 	let full = version_int * 1_000_00_00 + date_int;
 	debug_assert!(full != 0);
 	NonZeroU64::new(full).expect("UNPOSSIBLE: zero sort key")
+}
+
+#[cfg(feature = "crc")]
+#[inline(never)] // the CRC types consume a lot of stack space
+fn calc_hash(data: &[u8]) -> u32 {
+	let mut hasher = crc_any::CRCu32::crc32();
+	hasher.digest(data);
+	hasher.get_crc()
 }
 
 impl Deref for Rom {
