@@ -14,7 +14,7 @@ pub struct Release {
 ///
 /// This type supports any version that can be expressed as two `u8`s, where at least one of them
 /// is not zero, and the major version `u8` is no greater than 9.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Version {
 	data: NonZeroU16,
 }
@@ -34,8 +34,22 @@ pub struct ReleaseDate {
 	#[allow(missing_docs)] pub year: NonZeroU16,
 }
 
+impl PartialOrd for ReleaseDate {
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		Some(self.cmp(other))
+	}
+}
+
+impl Ord for ReleaseDate {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		self.year.cmp(&other.year)
+			.then(self.month.cmp(&other.month))
+			.then(self.day.cmp(&other.day))
+	}
+}
+
 #[allow(missing_docs)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ReleaseMonth {
 	January = 1,
 	February = 2,
