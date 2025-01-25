@@ -165,11 +165,20 @@ impl<M: Borrow<[u8]>> fmt::Debug for Rom<M> {
 
 #[derive(Debug)]
 pub struct Heuristics {
+	/// An integer key that can be used to sort multiple ROM images by version.
 	pub sort_key: NonZeroU64,
+
+	/// The offset of the kernel in the ROM image, or `None` if it wasn't found.
 	pub kernel_start: Option<Offset>,
+
+	/// The kernel release information. Will be `None` if no kernel release information could be
+	/// found.
+	///
+	/// Note that this will be the case with Arthur 0.30.
 	pub kernel_version: Option<Release>,
-	pub kernel_version_str_pos: Option<Offset>,
 	pub module_chain_start: Option<Offset>,
+
+	kernel_version_str_pos: Option<Offset>,
 }
 
 impl Heuristics {
@@ -265,11 +274,6 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		basis.subslice(0..first_tab_at)?.as_ref().as_ascii_str().ok()
 	}
 
-	/// Returns the kernel release information.
-	pub fn kernel_version(&self) -> Option<Release> {
-		self.kernel_version_str().and_then(Release::parse)
-	}
-
 	/// Returns the offset of the entry into the module chain, or `None` if `UtilityModule` wasn't
 	/// found.
 	pub fn module_chain_start(&self) -> Result<Offset, RomDecodeError> {
@@ -289,11 +293,6 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		}
 		self.crc32_hash.set(Some(hash));
 		hash
-	}
-
-	/// Returns an integer key that can be used to sort multiple ROM images by version.
-	pub fn sort_key(&self) -> NonZeroU64 {
-		self.heuristics.sort_key
 	}
 
 	/// Returns an iterator over all modules in the ROM chain.
@@ -488,7 +487,7 @@ mod test {
 	fn test_rom_1() {
 
 		let rom = super::Rom::from_mem(ROM_TEST1).unwrap();
-		assert_eq_hex!(NonZeroU32::new(0x20), rom.kernel_start());
+		assert_eq_hex!(NonZeroU32::new(0x20), rom.heuristics.kernel_start);
 		assert_eq_hex!(NonZeroU32::new(0x5c), rom.module_chain_start().ok());
 
 		let mut modules = rom.module_chain().unwrap();
@@ -509,10 +508,6 @@ mod test {
 	#[test]
 	fn show_rom_debug() {
 		let rom = super::Rom::from_mem(ROM_TEST1).unwrap();
-
-		println!("{:?}", &rom);
-		let _ = rom.kernel_start();
-		let _ = rom.kernel_version();
 		println!("{:?}", &rom);
 	}
 
@@ -543,7 +538,7 @@ mod test {
 			println!("{:?}", rom.heuristics);
 
 			assert_eq!(NonZeroU64::new(key),
-				Some(rom.sort_key()).filter(|n| *n != NonZeroU64::MAX));
+				Some(rom.heuristics.sort_key).filter(|n| *n != NonZeroU64::MAX));
 		}
 	}
 }
