@@ -176,8 +176,8 @@ pub struct Heuristics {
 	///
 	/// Note that this will be the case with Arthur 0.30.
 	pub kernel_version: Option<Release>,
-	pub module_chain_start: Option<Offset>,
 
+	module_chain_start: Option<Offset>,
 	kernel_version_str_pos: Option<Offset>,
 }
 
