@@ -184,7 +184,7 @@ impl Heuristics {
 				.and_then(Release::parse);
 
 		Rc::new(Heuristics {
-			sort_key: kernel_version.map(calc_sort_key_2).unwrap_or(NonZeroU64::MAX),
+			sort_key: kernel_version.map(calc_sort_key).unwrap_or(NonZeroU64::MAX),
 			kernel_start,
 			kernel_version,
 			kernel_version_str_pos,
@@ -338,13 +338,8 @@ impl<T: Clone> Clone2 for Cached<Range<T>> {
 // MM = month of release (01..=12)
 // dd = date of release (01..=31)
 #[inline(never)]
-fn calc_sort_key<M: Borrow<[u8]>>(rom: &Rom<M>) -> Option<NonZeroU64> {
-	rom.kernel_version().map(calc_sort_key_2)
-}
-
-#[inline(never)]
 #[allow(clippy::inconsistent_digit_grouping)]
-fn calc_sort_key_2(release: Release) -> NonZeroU64 {
+fn calc_sort_key(release: Release) -> NonZeroU64 {
 	let version_int = release.version.major() as u64 * 100 + release.version.minor() as u64;
 
 	let date_int = (release.date.year().get() as u64).saturating_sub(1900).min(999) * 1_00_00
@@ -484,7 +479,7 @@ mod test {
 			(None, b"Truncated\t\t1.00 (01 Jan 2000"),
 		] {
 			let result = Slice32::new(from).and_then(crate::Release::parse)
-				.map(|r| super::calc_sort_key_2(r).get());
+				.map(|r| super::calc_sort_key(r).get());
 			assert_eq!(expect, result);
 		}
 	}
