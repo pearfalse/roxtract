@@ -1,7 +1,9 @@
-use std::borrow::Borrow;
 use std::num::NonZeroU32;
 
-use crate::{bintrinsics::Slice32, Rom, Offset};
+use crate::{bintrinsics::Slice32, Offset};
+
+#[cfg(feature = "crc")]
+use {std::borrow::Borrow, crate::Rom};
 
 /// Metadata about a known RISC OS ROM image.
 #[non_exhaustive]
@@ -15,90 +17,98 @@ pub struct KnownRiscOsVersion {
 	pub crc32: u32,
 }
 
-static ARTHUR_030: KnownRiscOsVersion = KnownRiscOsVersion {
+macro_rules! known_version {
+	($name:ident = $value:expr) => {
+		#[cfg(feature = "crc")]
+		static $name: KnownRiscOsVersion = $value;
+	};
+}
+
+known_version!(ARTHUR_030 = KnownRiscOsVersion {
 	name_high_level: "Arthur 0.30",
 	name_internal: b"Arthur\t\t0.30 (17 Jun 1987)\0",
 	name_internal_pos: 0x1460,
 	crc32: 0x5df8ed42,
-};
+});
 
-static ARTHUR_120: KnownRiscOsVersion = KnownRiscOsVersion {
+known_version!(ARTHUR_120 = KnownRiscOsVersion {
 	name_high_level: "Arthur 1.20",
 	name_internal: b"Arthur\t\t1.20 (25 Sep 1987)\0",
 	name_internal_pos: 0x1318,
 	crc32: 0xeb3fda57,
-};
+});
 
-static RISC_OS_200: KnownRiscOsVersion = KnownRiscOsVersion {
+known_version!(RISC_OS_200 = KnownRiscOsVersion {
 	name_high_level: "RISC OS 2.00",
 	name_internal: b"RISC OS\t\t2.00 (05 Oct 1988)\0",
 	name_internal_pos: 0x1b38,
 	crc32: 0x89c4ad36,
-};
+});
 
-static RISC_OS_201: KnownRiscOsVersion = KnownRiscOsVersion {
+known_version!(RISC_OS_201 = KnownRiscOsVersion {
 	name_high_level: "RISC OS 2.01",
 	name_internal: b"RISC OS\t\t2.01 (05 Jul 1990)\0",
 	name_internal_pos: 0x4c90,
 	crc32: 0x7cb5ea3f,
-};
+});
 
-static RISC_OS_300: KnownRiscOsVersion = KnownRiscOsVersion {
+known_version!(RISC_OS_300 = KnownRiscOsVersion {
 	name_high_level: "RISC OS 3.00",
 	name_internal: b"RISC OS\t\t3.00 (25 Sep 1991)\0",
 	name_internal_pos: 0x4854,
 	crc32: 0xbfc99817,
-};
+});
 
-static RISC_OS_310: KnownRiscOsVersion = KnownRiscOsVersion {
+known_version!(RISC_OS_310 = KnownRiscOsVersion {
 	name_high_level: "RISC OS 3.10",
 	name_internal: b"RISC OS\t\t3.10 (30 Apr 1992)\0",
 	name_internal_pos: 0x498c,
 	crc32: 0xecac4ea6,
-};
+});
 
-static RISC_OS_311: KnownRiscOsVersion = KnownRiscOsVersion {
+known_version!(RISC_OS_311 = KnownRiscOsVersion {
 	name_high_level: "RISC OS 3.11",
 	name_internal: b"RISC OS\t\t3.11 (29 Sep 1992)\0",
 	name_internal_pos: 0x498c,
 	crc32: 0x54c0c963,
-};
+});
 
-static RISC_OS_319: KnownRiscOsVersion = KnownRiscOsVersion {
+known_version!(RISC_OS_319 = KnownRiscOsVersion {
 	name_high_level: "RISC OS 3.19",
 	name_internal: b"RISC OS\t\t3.19 (9. Jun 1993)\0",
 	name_internal_pos: 0x4a38,
 	crc32: 0x00c7a3d3,
-};
+});
 
-static RISC_OS_350: KnownRiscOsVersion = KnownRiscOsVersion {
+known_version!(RISC_OS_350 = KnownRiscOsVersion {
 	name_high_level: "RISC OS 3.50",
 	name_internal: b"RISC OS\t\t3.50 (18 Feb 1994)\0",
 	name_internal_pos: 0x5134,
 	crc32: 0x541b1415,
-};
+});
 
-static RISC_OS_360: KnownRiscOsVersion = KnownRiscOsVersion {
+known_version!(RISC_OS_360 = KnownRiscOsVersion {
 	name_high_level: "RISC OS 3.60",
 	name_internal: b"RISC OS\t\t3.60 (13 Apr 1995)\0",
 	name_internal_pos: 0x54b4,
 	crc32: 0xa9822c2c,
-};
+});
 
-static RISC_OS_370: KnownRiscOsVersion = KnownRiscOsVersion {
+known_version!(RISC_OS_370 = KnownRiscOsVersion {
 	name_high_level: "RISC OS 3.70",
 	name_internal: b"RISC OS\t\t3.70 (30 Jul 1996)\0",
 	name_internal_pos: 0x55c4,
 	crc32: 0x63fc131a,
-};
+});
 
-static RISC_OS_371: KnownRiscOsVersion = KnownRiscOsVersion {
+known_version!(RISC_OS_371 = KnownRiscOsVersion {
 	name_high_level: "RISC OS 3.71",
 	name_internal: b"RISC OS\t\t3.71 (19 Feb 1997)\0",
 	name_internal_pos: 0x56e4,
 	crc32: 0x211cf888,
-};
+});
 
+#[cfg(feature = "crc")]
 impl KnownRiscOsVersion {
 	/// Returns `true` if the byte data in `rom` matches `self`.
 	fn matches<M: Borrow<[u8]>>(&self, rom: &Rom<M>) -> bool {

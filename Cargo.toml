@@ -15,12 +15,15 @@ edition = "2021"
 
 
 [workspace.dependencies]
-crc-any = "2.5"
 ascii = "1.1"
 
 [dependencies]
-crc-any = { workspace = true }
+crc-any = { version = "2.5", optional = true }
 ascii = { workspace = true }
+
+[features]
+default = ["crc"]
+crc = ["dep:crc-any"]
 
 [dev-dependencies]
 sptr = "0.3.2"

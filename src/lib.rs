@@ -13,6 +13,9 @@ pub use bintrinsics::Slice32;
 mod release;
 pub use release::{Release, Version, ReleaseDate};
 
+#[cfg(feature = "crc")]
+mod crc;
+
 use std::{
 	borrow::Borrow,
 	cell::Cell,
@@ -104,10 +107,9 @@ impl Error for RomDecodeError { }
 /// The ROM image has to be contiguous in system memory.
 pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 	data: M,
-
-	crc32_hash: Cached<u32>,
-
 	heuristics: Rc<Heuristics>,
+
+	#[cfg(feature = "crc")] crc32_hash: Cached<u32>,
 }
 
 impl<M: Borrow<[u8]>> fmt::Debug for Rom<M> {
@@ -225,7 +227,7 @@ impl Rom<Box<[u8]>> {
 		let heuristics = Heuristics::new(Slice32::new(&data).unwrap());
 		Ok(Rom {
 			data,
-			crc32_hash: Cached::default(),
+			#[cfg(feature = "crc")] crc32_hash: Cached::default(),
 			heuristics,
 		})
 	}
@@ -242,7 +244,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		let heuristics = Heuristics::new(Slice32::new(&data).unwrap());
 		Ok(Rom {
 			data: mem,
-			crc32_hash: Cached::default(),
+			#[cfg(feature = "crc")] crc32_hash: Cached::default(),
 			heuristics,
 		})
 	}
@@ -280,21 +282,6 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		self.heuristics.module_chain_start.ok_or(RomDecodeError::UtilityModuleNotFound)
 	}
 
-	/// Returns the CRC32 hash of the ROM image.
-	pub fn crc32_hash(&self) -> u32 {
-		if let Some(already) = self.crc32_hash.get() { return already; }
-
-		let hash = calc_hash(self.data.borrow());
-		#[inline(never)] // the CRC types consume a lot of stack space
-		fn calc_hash(data: &[u8]) -> u32 {
-			let mut hasher = crc_any::CRCu32::crc32();
-			hasher.digest(data);
-			hasher.get_crc()
-		}
-		self.crc32_hash.set(Some(hash));
-		hash
-	}
-
 	/// Returns an iterator over all modules in the ROM chain.
 	pub fn module_chain(&self) -> Result<ModuleChain<'_>, RomDecodeError> {
 		self.module_chain_start().map(|addr| ModuleChain::new(self, addr))
@@ -304,7 +291,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 	pub fn as_ref<'a>(&'a self) -> Rom<&'a Slice32> {
 		Rom {
 			data: self.as_slice32(),
-			crc32_hash: self.crc32_hash.clone(),
+			#[cfg(feature = "crc")] crc32_hash: self.crc32_hash.clone(),
 			heuristics: Rc::clone(&self.heuristics),
 		}
 	}

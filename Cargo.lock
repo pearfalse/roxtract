@@ -81,7 +81,6 @@ dependencies = [
 name = "roxtract-bin"
 version = "0.1.0"
 dependencies = [
- "crc-any",
  "gumdrop",
  "gumdrop_derive",
  "roxtract",
