@@ -26,6 +26,13 @@ impl Slice32 {
 		})
 	}
 
+	pub(crate) const fn new_unwrapped(src: &[u8]) -> &Slice32 {
+		match Self::new(src) {
+			Some(s) => s,
+			None => panic!("Slice32: invalid const slice"),
+		}
+	}
+
 	/// Constructs a new `Slice32` variant via a `Box` allocation. If the array is too large, the
 	/// original `Box` is returned.
 	pub fn new_boxed(src: Box<[u8]>) -> Result<Box<Slice32>, Box<[u8]>> {

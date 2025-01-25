@@ -1,6 +1,7 @@
 use std::borrow::Borrow;
+use std::num::NonZeroU32;
 
-use crate::{bintrinsics::Slice32, Rom};
+use crate::{bintrinsics::Slice32, Rom, Offset};
 
 /// Metadata about a known RISC OS ROM image.
 #[non_exhaustive]
@@ -296,4 +297,50 @@ mod tests {
 		assert_ne!(data.as_ptr().addr() & 3, 0);
 		assert_eq!(s(data).find_offset_to(s(b"HELLO\0"), 0), Some(0));
 	}
+}
+
+// Unit tests for these functions are up one level
+
+pub(crate) fn kernel_start(data: &Slice32) -> Option<Offset> {
+	let is_in_range = {
+		let len = data.len();
+		move |pos: &u32| *pos < len
+	};
+
+	let mut end_of_module0 = data.find(Slice32::new(b"MODULE#\0").unwrap())
+		.and_then(|p| p.checked_add(8).filter(is_in_range))?;
+
+	// Arthur 0.x up through RISC OS 2.00 have two extra non-zero words between `MODULE#0\0`
+	// and the faux-module header; skip over them if present
+	let mut word_skip = 2;
+	while word_skip > 0 && data.read_word(end_of_module0)? != 0 {
+		end_of_module0 = end_of_module0.checked_add(4).filter(is_in_range)?;
+		word_skip -= 1;
+	}
+
+	NonZeroU32::new(end_of_module0)
+}
+
+pub(crate) fn kernel_version_str_pos(data: &Slice32, kernel_start: Offset) -> Option<Offset> {
+	let kernel_start = kernel_start;
+	let kernel_title_offset = kernel_start.checked_add(0x14) // title offset
+		.and_then(|o| data.read_word(o.get()))
+		.and_then(NonZeroU32::new)
+		?;
+
+	kernel_start.checked_add(kernel_title_offset.get())
+}
+
+pub(crate) fn kernel_version_str(data: &Slice32, start_pos: Option<Offset>)-> Option<&Slice32> {
+	start_pos
+		.and_then(|pos| data.subslice_from(pos.get()))
+		.and_then(Slice32::cstr)
+}
+
+pub(crate) fn module_chain_start(data: &Slice32) -> Option<Offset> {
+	const NEEDLE: &Slice32 = Slice32::new_unwrapped(b"UtilityModule\0");
+
+	data.find_offset_to(NEEDLE, 0x10)
+		.and_then(|n| n.checked_sub(4))
+		.and_then(NonZeroU32::new)
 }

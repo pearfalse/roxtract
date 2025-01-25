@@ -177,10 +177,10 @@ impl Heuristics {
 	fn new(data: &Slice32) -> Rc<Self> {
 		type Scope = Rom<Box<[u8]>>;
 
-		let kernel_start = Scope::kernel_start_impl(data);
+		let kernel_start = heuristics::kernel_start(data);
 		let kernel_version_str_pos = kernel_start
-			.and_then(|ks| Scope::kernel_version_str_pos_impl(data, ks));
-		let kernel_version = Scope::kernel_version_str_impl(data, kernel_version_str_pos)
+			.and_then(|ks| heuristics::kernel_version_str_pos(data, ks));
+		let kernel_version = heuristics::kernel_version_str(data, kernel_version_str_pos)
 				.and_then(Release::parse);
 
 		Rc::new(Heuristics {
@@ -188,7 +188,7 @@ impl Heuristics {
 			kernel_start,
 			kernel_version,
 			kernel_version_str_pos,
-			module_chain_start: Scope::module_chain_start_impl(data),
+			module_chain_start: heuristics::module_chain_start(data),
 		})
 	}
 }
@@ -267,46 +267,10 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		self.heuristics.kernel_start
 	}
 
-	fn kernel_start_impl(data: &Slice32) -> Option<Offset> {
-		let is_in_range = {
-			let len = data.len();
-			move |pos: &u32| *pos < len
-		};
-
-		let mut end_of_module0 = data.find(Slice32::new(b"MODULE#\0").unwrap())
-			.and_then(|p| p.checked_add(8).filter(is_in_range))?;
-
-		// Arthur 0.x up through RISC OS 2.00 have two extra non-zero words between `MODULE#0\0`
-		// and the faux-module header; skip over them if present
-		let mut word_skip = 2;
-		while word_skip > 0 && data.read_word(end_of_module0)? != 0 {
-			end_of_module0 = end_of_module0.checked_add(4).filter(is_in_range)?;
-			word_skip -= 1;
-		}
-
-		NonZeroU32::new(end_of_module0)
-	}
-
-	fn kernel_version_str_pos_impl(data: &Slice32, kernel_start: Offset) -> Option<Offset> {
-		let kernel_start = kernel_start;
-		let kernel_title_offset = kernel_start.checked_add(0x14) // title offset
-			.and_then(|o| data.read_word(o.get()))
-			.and_then(NonZeroU32::new)
-			?;
-
-		kernel_start.checked_add(kernel_title_offset.get())
-	}
-
 	/// Returns a byte slice to the kernel version string (usually of the form
 	/// `{OS name}\t\tV.VV (DD Mmm YYYY)`).
 	pub fn kernel_version_str(&self) -> Option<&Slice32> {
-		Self::kernel_version_str_impl(self.as_slice32(), self.heuristics.kernel_version_str_pos)
-	}
-
-	fn kernel_version_str_impl(data: &Slice32, start_pos: Option<Offset>) -> Option<&Slice32> {
-		start_pos
-			.and_then(|pos| data.subslice_from(pos.get()))
-			.and_then(Slice32::cstr)
+		heuristics::kernel_version_str(self.as_slice32(), self.heuristics.kernel_version_str_pos)
 	}
 
 	/// Returns the OS name (likely 'RISC OS' or 'Arthur').
@@ -327,12 +291,6 @@ impl<M: Borrow<[u8]>> Rom<M> {
 	/// found.
 	pub fn module_chain_start(&self) -> Result<Offset, RomDecodeError> {
 		self.heuristics.module_chain_start.ok_or(RomDecodeError::UtilityModuleNotFound)
-	}
-
-	fn module_chain_start_impl(data: &Slice32) -> Option<Offset> {
-			data.find_offset_to(Slice32::new(b"UtilityModule\0").unwrap(), 0x10)
-			.and_then(|n| n.checked_sub(4))
-			.and_then(NonZeroU32::new)
 	}
 
 	/// Returns the CRC32 hash of the ROM image.
