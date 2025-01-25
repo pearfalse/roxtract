@@ -24,7 +24,7 @@ use std::{
 	io::{self, Read},
 	iter::FusedIterator,
 	num::{NonZeroU32, NonZeroU64},
-	ops::{Deref, Range},
+	ops::Deref,
 	path::Path,
 	rc::Rc,
 };
@@ -299,22 +299,6 @@ impl<M: Borrow<[u8]>> Rom<M> {
 	/// Returns a raw slice to the ROM image data.
 	pub fn as_slice(&self) -> &[u8] {
 		self.data.borrow().as_ref()
-	}
-}
-
-trait Clone2 : Sized {
-	fn clone(&self) -> Self;
-}
-
-impl<T: Clone> Clone2 for Cached<Range<T>> {
-	fn clone(&self) -> Self {
-		let as_ref = unsafe {
-			// SAFETY: we won't mutate the original cell, so taking a shared ref to its contents is
-			// fine
-			&*self.as_ptr()
-		}.as_ref();
-
-		Cell::new(as_ref.cloned())
 	}
 }
 
