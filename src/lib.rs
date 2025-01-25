@@ -336,7 +336,7 @@ fn calc_sort_key(release: Release) -> NonZeroU64 {
 
 	let full = version_int * 1_000_00_00 + date_int;
 	debug_assert!(full != 0);
-	NonZeroU64::new(full).expect("UNPOSSIBLE: zero sort key")
+	NonZeroU64::new(full).unwrap_or(NonZeroU64::MAX)
 }
 
 #[cfg(feature = "crc")]
