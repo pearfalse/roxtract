@@ -13,7 +13,7 @@ pub struct Release {
 /// Parsed version information for a ROM image, derived from its `UtilityModule` help string.
 ///
 /// This type supports any version that can be expressed as two `u8`s, where at least one of them
-/// is not zero.
+/// is not zero, and the major version `u8` is no greater than 9.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Version {
 	data: NonZeroU16,
