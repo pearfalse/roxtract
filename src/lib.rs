@@ -26,9 +26,8 @@ use std::{
 	rc::Rc,
 };
 
-// NonZeroU32::MAX represents 'cached find failure'
+// We assume that offset 0 into the ROM isn't anything not related to the self-test, which we ignore
 type Offset = NonZeroU32;
-type Cached<T> = Cell<Option<T>>;
 
 /// Reasons why Roxtract will refuse to load a ROM image file.
 #[derive(Debug)]
@@ -195,8 +194,6 @@ pub struct Heuristics {
 impl Heuristics {
 	#[inline(never)]
 	fn new(data: &Slice32) -> Rc<Self> {
-		type Scope = Rom<Box<[u8]>>;
-
 		let kernel_start = heuristics::kernel_start(data);
 		let kernel_version_str_pos = kernel_start
 			.and_then(|ks| heuristics::kernel_version_str_pos(data, ks));

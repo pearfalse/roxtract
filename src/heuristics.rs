@@ -158,6 +158,7 @@ struct WordCursor<'a> {
 }
 
 impl<'a> WordCursor<'a> {
+	#[allow(dead_code)] // forward iteration isn't used right now, but what if it is one day‽
 	pub fn new_start(bytes: &'a Slice32) -> Self {
 		Self::new(bytes, |_| 0)
 	}
@@ -187,6 +188,7 @@ impl<'a> WordCursor<'a> {
 		})
 	}
 
+	#[allow(dead_code)]
 	pub fn move_next(&mut self) {
 		self.cursor_rel = self.cursor_rel.saturating_add(4); // saturation == guaranteed OOB
 	}
