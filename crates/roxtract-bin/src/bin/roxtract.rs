@@ -1,4 +1,4 @@
-use std::{ffi::{OsString, OsStr}, fs, io::{Read, self}, error::Error, fmt};
+use std::{ffi::OsString, error::Error, fmt};
 
 use roxtract::*;
 
@@ -14,35 +14,6 @@ struct CliArgs {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-	#[cfg(debug_assertions)]
-	'args_override: {
-		let mut args = std::env::args_os().skip(1);
-		let path = match (args.next(), args.next()) {
-			(Some(ref a), Some(b)) if a.as_os_str() == OsStr::new("make-crc") => b,
-			_ => break 'args_override
-		};
-
-		let mut hasher = crc_any::CRCu32::crc32();
-		let mut file = fs::File::open(path)?;
-
-		const BUF_SIZE: usize = 8<<10;
-		let mut buf = vec![0u8; BUF_SIZE].into_boxed_slice();
-		loop {
-			match file.read(&mut buf) {
-				Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
-				Err(e) => panic!("i/o error: {:?}", e),
-				Ok(BUF_SIZE) => hasher.digest(&buf),
-				Ok(part) => {
-					hasher.digest(&buf[..part]);
-					break
-				}
-			}
-		};
-
-		println!("{:08x}", hasher.get_crc());
-		std::process::exit(0);
-	}
-
 	let args: CliArgs = gumdrop::parse_args_default_or_exit::<CliArgs>();
 
 	let rom = Rom::from_file(args.rom_path)?;
@@ -52,8 +23,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 		println!("ROM image not recognised; it may be modified or corrupted");
 	}
 	println!("Kernel release info (name, release): {:?}, {:?}",
-		rom.os_name(), rom.kernel_version());
-	println!("Kernel starts at {:04x}", rom.kernel_start().or_print("[not found]"));
+		rom.os_name(), rom.heuristics().kernel_version);
+	println!("Kernel starts at {:04x}", rom.heuristics().kernel_start.or_print("[not found]"));
 	println!("Module chain starts at {:04x}", rom.module_chain_start()
 		.ok().or_print("[UtilityModule not found]"));
 

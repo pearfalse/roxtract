@@ -262,6 +262,9 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		}
 	}
 
+	/// Gets a reference to heuristic data derived from the ROM image.
+	pub fn heuristics(&self) -> &Heuristics { &*self.heuristics }
+
 	/// Returns a byte slice to the kernel version string (usually of the form
 	/// `{OS name}\t\tV.VV (DD Mmm YYYY)`).
 	pub fn kernel_version_str(&self) -> Option<&Slice32> {
