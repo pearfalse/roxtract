@@ -211,14 +211,6 @@ impl fmt::Display for ReleaseMonth {
 	}
 }
 
-impl crate::Recell for Release {
-	const FIND_FAILURE: Self = Release {
-		version: Version { data: NonZeroU16::MAX },
-		date: ReleaseDate {
-			day: NonZeroU8::MAX, month: ReleaseMonth::December, year: NonZeroU16::MAX
-		}
-	};
-}
 
 #[cfg(test)]
 mod tests {

@@ -332,38 +332,6 @@ impl<T: Clone> Clone2 for Cached<Range<T>> {
 	}
 }
 
-trait Recell : Copy + Eq {
-	const FIND_FAILURE: Self;
-
-	#[inline]
-	fn or_failure(self) -> Option<Self> {
-		Some(self).filter(|s| *s != Self::FIND_FAILURE)
-	}
-}
-
-impl Recell for NonZeroU32 {
-	const FIND_FAILURE: Self = NonZeroU32::MAX;
-}
-
-impl Recell for NonZeroU64 {
-	const FIND_FAILURE: Self = NonZeroU64::MAX;
-}
-
-trait RecellExt {
-	type Inner;
-
-	fn unwrap_or_failure(self) -> Self::Inner;
-}
-
-impl<T: Recell> RecellExt for Option<T> {
-	type Inner = T;
-
-	#[inline]
-	fn unwrap_or_failure(self) -> Self::Inner {
-		self.unwrap_or(<T as Recell>::FIND_FAILURE)
-	}
-}
-
 // vvvYYYMMdd where
 // vvv = decimalised version, à la Wimp_Initialise (e.g. RISC OS 3.11 := 311, Arthur 0.30 := 30)
 // YYY = year of release - 1900 (e.g. RISC OS 2.01 := 90)
