@@ -126,7 +126,7 @@ impl KnownRiscOsVersion {
 			true
 		}
 
-		check_data(self, rom.borrow()) && rom.crc32_hash == self.crc32
+		check_data(self, rom.borrow()) && rom.heuristics.crc32_hash == self.crc32
 	}
 
 	/// Returns a reference to a `KnownRiscOsVersion` object, if there is one that matches

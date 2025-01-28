@@ -70,7 +70,7 @@ impl fmt::Display for RomLoadError {
 			RomLoadError::Io(e)
 				=> write!(f, "I/O error: {}", e),
 			RomLoadError::RomInvalidSize
-				=> f.write_str("ROM invalid size (mut be 32-bit aligned and no more than 12 MiB)"),
+				=> f.write_str("ROM invalid size (mut be a multiple of 4 bytes, and no more than 12 MiB)"),
 		}
 	}
 }
@@ -90,6 +90,8 @@ impl fmt::Display for RomDecodeError {
 
 impl Error for RomDecodeError { }
 
+#[cfg(feature = "crc")] type CrcHash = u32;
+#[cfg(not(feature = "crc"))] type CrcHash = ();
 
 /// A wrapper round a RISC OS ROM image.
 ///
@@ -107,8 +109,6 @@ impl Error for RomDecodeError { }
 pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 	data: M,
 	heuristics: Rc<Heuristics>,
-
-	#[cfg(feature = "crc")] pub crc32_hash: u32,
 }
 
 impl<M: Borrow<[u8]>> fmt::Debug for Rom<M> {
@@ -189,11 +189,14 @@ pub struct Heuristics {
 
 	module_chain_start: Option<Offset>,
 	kernel_version_str_pos: Option<Offset>,
+
+	#[cfg(feature = "crc")] pub crc32_hash: CrcHash,
+	#[cfg(not(feature = "crc"))] crc32_hash: CrcHash,
 }
 
 impl Heuristics {
 	#[inline(never)]
-	fn new(data: &Slice32) -> Rc<Self> {
+	fn new(data: &Slice32, crc32_hash: CrcHash) -> Rc<Self> {
 		let kernel_start = heuristics::kernel_start(data);
 		let kernel_version_str_pos = kernel_start
 			.and_then(|ks| heuristics::kernel_version_str_pos(data, ks));
@@ -206,6 +209,7 @@ impl Heuristics {
 			kernel_version,
 			kernel_version_str_pos,
 			module_chain_start: heuristics::module_chain_start(data),
+			crc32_hash,
 		})
 	}
 }
@@ -230,12 +234,11 @@ impl Rom<Box<[u8]>> {
 		let mut data = vec![0u8; rom_len as usize].into_boxed_slice();
 		file.read_exact(&mut data)?;
 
-		let heuristics = Heuristics::new(Slice32::new(&data).unwrap());
-		#[cfg(feature = "crc")] let crc32_hash = calc_hash(&data);
+		let crc32_hash = calc_hash(&data);
+		let heuristics = Heuristics::new(Slice32::new(&data).unwrap(), crc32_hash);
 
 		Ok(Rom {
 			data,
-			#[cfg(feature = "crc")] crc32_hash,
 			heuristics,
 		})
 	}
@@ -249,12 +252,11 @@ impl<M: Borrow<[u8]>> Rom<M> {
 			return Err(RomLoadError::RomInvalidSize);
 		}
 
-		let heuristics = Heuristics::new(Slice32::new(data).unwrap());
-		#[cfg(feature = "crc")] let crc32_hash = calc_hash(data);
+		let crc32_hash = calc_hash(data);
+		let heuristics = Heuristics::new(Slice32::new(data).unwrap(), crc32_hash);
 
 		Ok(Rom {
 			data: mem,
-			#[cfg(feature = "crc")] crc32_hash,
 			heuristics,
 		})
 	}
@@ -304,7 +306,6 @@ impl<M: Borrow<[u8]>> Rom<M> {
 	pub fn as_ref(&self) -> Rom<&Slice32> {
 		Rom {
 			data: self.as_slice32(),
-			#[cfg(feature = "crc")] crc32_hash: self.crc32_hash,
 			heuristics: Rc::clone(&self.heuristics),
 		}
 	}
@@ -343,6 +344,10 @@ fn calc_hash(data: &[u8]) -> u32 {
 	hasher.digest(data);
 	hasher.get_crc()
 }
+
+#[cfg(not(feature = "crc"))]
+#[inline(always)]
+const fn calc_hash(_: &[u8]) -> () { }
 
 impl Deref for Rom {
 	type Target = Slice32;

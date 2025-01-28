@@ -1,14 +1,12 @@
 # Roxtract
 
-A library for analysing and extracting data from a RISC OS ROM image. It also includes a basic
-command-line app for dumping info about the module chain.
+A library for analysing and extracting data from a RISC OS ROM image. It also includes a basic command-line app for dumping info about the module chain.
 
-The library is in very early stages, but can correctly identify every Acorn-era published ROM image
-of RISC OS (and Arthur 1.20; it can identify the module chain in Arthur 0.30).
+The library is in very early stages, but can correctly identify every Acorn-era published ROM image of RISC OS (and Arthur 1.20; it can identify the module chain in Arthur 0.30).
 
 ## As a Rust library
 
-Roxtract is ready to use as a library. There are no feature flags to configure.
+Roxtract is ready to use as a library. There is only one feature flag, `crc`, which is on by default. Removing this will prevent eager CRC32 calculations on ROM load, but will also prevent matching a loded ROM against known RISC OS versions.
 
 ## As a standalone app
 
