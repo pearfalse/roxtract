@@ -190,6 +190,7 @@ pub struct Heuristics {
 	module_chain_start: Option<Offset>,
 	kernel_version_str_pos: Option<Offset>,
 
+	/// The CRC32 hash of the entire ROM image.
 	#[cfg(feature = "crc")] pub crc32_hash: CrcHash,
 	#[cfg(not(feature = "crc"))] crc32_hash: CrcHash,
 }
