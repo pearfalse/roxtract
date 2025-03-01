@@ -6,7 +6,7 @@ The library is in very early stages, but can correctly identify every Acorn-era 
 
 ## As a Rust library
 
-Roxtract is ready to use as a library. There is only one feature flag, `crc`, which is on by default. Removing this will prevent eager CRC32 calculations on ROM load, but will also prevent matching a loded ROM against known RISC OS versions.
+Roxtract is ready to use as a library. There is only one feature flag, `crc`, which is on by default. Removing this will prevent eager CRC32 calculations on ROM load, but will also prevent matching a loaded ROM against known RISC OS versions.
 
 ## As a standalone app
 
