@@ -14,7 +14,7 @@ mod release;
 pub use release::{Release, Version, ReleaseDate, ReleaseMonth};
 
 use std::{
-	borrow::Borrow,
+	borrow::{Borrow, BorrowMut},
 	cell::Cell,
 	error::Error,
 	fmt,
@@ -23,11 +23,17 @@ use std::{
 	num::{NonZeroU32, NonZeroU64},
 	ops::Deref,
 	path::Path,
-	rc::Rc,
 };
 
 // We assume that offset 0 into the ROM isn't anything not related to the self-test, which we ignore
 type Offset = NonZeroU32;
+
+// Atomic reference counting is opt-in
+#[cfg(not(feature = "sync"))]
+type Xrc<T> = std::rc::Rc<T>;
+
+#[cfg(feature = "sync")]
+type Xrc<T> = std::sync::Arc<T>;
 
 /// Reasons why Roxtract will refuse to load a ROM image file.
 #[derive(Debug)]
@@ -108,7 +114,7 @@ impl Error for RomDecodeError { }
 /// The ROM image has to be contiguous in system memory.
 pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 	data: M,
-	heuristics: Rc<Heuristics>,
+	heuristics: Xrc<Heuristics>,
 }
 
 impl<M: Borrow<[u8]>> fmt::Debug for Rom<M> {
@@ -197,14 +203,14 @@ pub struct Heuristics {
 
 impl Heuristics {
 	#[inline(never)]
-	fn new(data: &Slice32, crc32_hash: CrcHash) -> Rc<Self> {
+	fn new(data: &Slice32, crc32_hash: CrcHash) -> Xrc<Self> {
 		let kernel_start = heuristics::kernel_start(data);
 		let kernel_version_str_pos = kernel_start
 			.and_then(|ks| heuristics::kernel_version_str_pos(data, ks));
 		let kernel_version = heuristics::kernel_version_str(data, kernel_version_str_pos)
 				.and_then(Release::parse);
 
-		Rc::new(Heuristics {
+		Xrc::new(Heuristics {
 			sort_key: kernel_version.map(calc_sort_key).unwrap_or(NonZeroU64::MAX),
 			kernel_start,
 			kernel_version,
@@ -217,13 +223,10 @@ impl Heuristics {
 
 const ROM_LIMIT: u32 = 12 << 20; // 12 MiB limit in the Archimedes memory map
 
-impl Rom<Box<[u8]>> {
+impl<M: BorrowMut<[u8]>> Rom<M> {
 	/// Creates a `Rom` owning its contents from a file.
-	pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, RomLoadError> {
-		Self::from_file_impl(path.as_ref())
-	}
-
-	fn from_file_impl(path: &Path) -> Result<Self, RomLoadError> {
+	pub fn from_file<P: AsRef<Path>, F: FnOnce(u32) -> M>(path: P, f: F)
+	-> Result<Rom<M>, RomLoadError> {
 		let mut file = std::fs::File::open(path)?;
 
 		let rom_len = match file.metadata()?.len() {
@@ -232,11 +235,13 @@ impl Rom<Box<[u8]>> {
 			_ => return Err(RomLoadError::RomInvalidSize),
 		};
 
-		let mut data = vec![0u8; rom_len as usize].into_boxed_slice();
-		file.read_exact(&mut data)?;
+		let mut data = f(rom_len);
+		file.read_exact(data.borrow_mut())?;
 
-		let crc32_hash = calc_hash(&data);
-		let heuristics = Heuristics::new(Slice32::new(&data).unwrap(), crc32_hash);
+		let data_b = data.borrow();
+
+		let crc32_hash = calc_hash(data_b);
+		let heuristics = Heuristics::new(Slice32::new(data_b).unwrap(), crc32_hash);
 
 		Ok(Rom {
 			data,
@@ -307,13 +312,25 @@ impl<M: Borrow<[u8]>> Rom<M> {
 	pub fn as_ref(&self) -> Rom<&Slice32> {
 		Rom {
 			data: self.as_slice32(),
-			heuristics: Rc::clone(&self.heuristics),
+			heuristics: Xrc::clone(&self.heuristics),
 		}
 	}
 
 	/// Returns a raw slice to the ROM image data.
 	pub fn as_slice(&self) -> &[u8] {
 		self.data.borrow()
+	}
+}
+
+
+// Rc and Arc have the same inherent method names for cloning, so only one impl block needed
+impl<T: Borrow<[u8]>> Clone for Rom<Xrc<T>>
+where Xrc<T>: Borrow<[u8]> {
+	fn clone(&self) -> Self {
+		Self {
+			data: Xrc::clone(&self.data),
+			heuristics: Xrc::clone(&self.heuristics),
+		}
 	}
 }
 
@@ -538,5 +555,12 @@ mod test {
 			assert_eq!(NonZeroU64::new(key),
 				Some(rom.heuristics.sort_key).filter(|n| *n != NonZeroU64::MAX));
 		}
+	}
+
+	#[test]
+	#[cfg(feature = "sync")]
+	fn verify_sync() {
+		fn f<T: Sync>() {}
+		f::<super::Rom<&'static [u8]>>();
 	}
 }

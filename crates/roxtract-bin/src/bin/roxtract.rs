@@ -16,7 +16,7 @@ struct CliArgs {
 fn main() -> Result<(), Box<dyn Error>> {
 	let args: CliArgs = gumdrop::parse_args_default_or_exit::<CliArgs>();
 
-	let rom = Rom::from_file(args.rom_path)?;
+	let rom = Rom::from_file(args.rom_path, |len| vec![0u8; len as usize].into_boxed_slice())?;
 	if let Some(known) = KnownRiscOsVersion::find(&rom) {
 		println!("ROM appears to be {}", known.name_high_level);
 	} else {

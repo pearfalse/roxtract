@@ -297,6 +297,7 @@ mod tests {
 	#[test]
 	fn find_offset_to_force_unaligned() {
 		#![allow(unstable_name_collisions)]
+		#[allow(unused_imports)]
 		use sptr::Strict as _;
 
 		static DATA: &[u8] = b"\x08\0\0\0!no!HELLO\0";

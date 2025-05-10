@@ -23,6 +23,7 @@ ascii = { workspace = true }
 [features]
 default = ["crc"]
 crc = ["dep:crc-any"]
+sync = []
 
 [dev-dependencies]
 sptr = "0.3.2"
