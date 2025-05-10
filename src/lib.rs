@@ -322,6 +322,23 @@ impl<M: Borrow<[u8]>> Rom<M> {
 	}
 }
 
+impl Rom<Xrc<[u8]>> {
+	/// Clones a new handle to the underlying ROM data.
+	#[inline]
+	pub fn clone_handle(&self) -> Xrc<[u8]> {
+		Xrc::clone(&self.data)
+	}
+}
+
+#[cfg(not(feature = "sync"))]
+impl Rom<std::sync::Arc<[u8]>> {
+	/// Clones a new handle to the underlying ROM data.
+	#[inline]
+	pub fn clone_handle(&self) -> std::sync::Arc<[u8]> {
+		std::sync::Arc::clone(&self.data)
+	}
+}
+
 
 // Rc and Arc have the same inherent method names for cloning, so only one impl block needed
 impl<T: Borrow<[u8]>> Clone for Rom<Xrc<T>>
