@@ -223,9 +223,18 @@ impl Heuristics {
 
 const ROM_LIMIT: u32 = 12 << 20; // 12 MiB limit in the Archimedes memory map
 
-impl<M: BorrowMut<[u8]>> Rom<M> {
+impl Rom<Box<[u8]>> {
 	/// Creates a `Rom` owning its contents from a file.
-	pub fn from_file<P: AsRef<Path>, F: FnOnce(u32) -> M>(path: P, f: F)
+	pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Rom<Box<[u8]>>, RomLoadError> {
+		let path = path.as_ref();
+		Self::from_file_with(path, |len| vec![0u8; len as usize].into_boxed_slice())
+	}
+}
+
+impl<M: BorrowMut<[u8]>> Rom<M> {
+	/// Creates a `Rom` owning its contents from a file, using a memory allocation strategy
+	/// chosen by the caller.
+	pub fn from_file_with<P: AsRef<Path>, F: FnOnce(u32) -> M>(path: P, f: F)
 	-> Result<Rom<M>, RomLoadError> {
 		let mut file = std::fs::File::open(path)?;
 
