@@ -320,14 +320,6 @@ impl<M: Borrow<[u8]>> Rom<M> {
 		self.module_chain_start().map(|addr| ModuleChain::new(self, addr))
 	}
 
-	/// Returns a `Rom` object that transparently borrows the data of `self` as a `Slice32`.
-	pub fn as_ref(&self) -> Rom<&Slice32> {
-		Rom {
-			data: self.as_slice32(),
-			heuristics: Xrc::clone(&self.heuristics),
-		}
-	}
-
 	/// Returns a raw slice to the ROM image data.
 	pub fn as_slice(&self) -> &[u8] {
 		self.data.borrow()
