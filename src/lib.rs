@@ -275,6 +275,11 @@ impl<M: Borrow<[u8]>> Rom<M> {
 			heuristics,
 		})
 	}
+
+	/// Consumes `self`, returning the original ROM data.
+	pub fn into_inner(self) -> M {
+		self.data
+	}
 }
 
 impl<M: Borrow<[u8]>> Rom<M> {
