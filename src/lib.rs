@@ -280,9 +280,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 	pub fn into_inner(self) -> M {
 		self.data
 	}
-}
 
-impl<M: Borrow<[u8]>> Rom<M> {
 	/// Returns a slice of the ROM image.
 	#[inline]
 	pub fn as_slice32(&self) -> &Slice32 {
@@ -333,6 +331,13 @@ impl<M: Borrow<[u8]>> Rom<M> {
 	/// Returns a raw slice to the ROM image data.
 	pub fn as_slice(&self) -> &[u8] {
 		self.data.borrow()
+	}
+}
+
+impl<M: Borrow<[u8]>> AsRef<M> for Rom<M> {
+	#[inline]
+	fn as_ref(&self) -> &M {
+		&self.data
 	}
 }
 
