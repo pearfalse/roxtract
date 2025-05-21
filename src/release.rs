@@ -97,12 +97,7 @@ impl Release {
 		if let [a, b'.', b, c, b' ', b'(', ref rest @ .., b')'] = *src.as_ref() {
 			let (a, b, c) = (parse_digit(a)?, parse_digit(b)?, parse_digit(c)?);
 			(
-				Version { data: NonZeroU16::new({
-					let a = (a as u16) << 8;
-					let b = (b as u16) * 10;
-					let c = c as u16;
-					a + b + c
-				})? },
+				Version::new(a, b*10+c)?,
 				Slice32::new(rest).unwrap()
 			)
 		} else { return None };
@@ -120,9 +115,20 @@ impl fmt::Display for Release {
 }
 
 impl Version {
+	/// Constructs a new `Version` with the given major and minor numbers.
+	///
+	/// Will return `None` if `major` and `minor` are both 0 or greater than 99.
+	#[inline]
+	pub fn new(major: u8, minor: u8) -> Option<Self> {
+		if major > 99 || minor > 99 { return None; }
+		NonZeroU16::new((major as u16) << 8 | minor as u16).map(|data| Version { data })
+	}
+
+	/// Returns the major number of this version.
 	#[inline]
 	pub const fn major(self) -> u8 { (self.data.get() >> 8) as u8 }
 
+	/// Returns the minor number of this version.
 	#[inline]
 	pub const fn minor(self) -> u8 { self.data.get() as u8 }
 }
@@ -255,6 +261,21 @@ mod tests {
 			}),
 			ReleaseDate::parse(Slice32::new(b"6. Apr 1472").unwrap())
 		);
+	}
+
+	#[test]
+	fn version_type() {
+		fn assert_ver(major: u8, minor: u8, data: u16) {
+			let expected = NonZeroU16::new(data).map(|data| Version { data });
+			assert_eq!(expected, Version::new(major, minor));
+		}
+
+		assert_ver(0, 0, 0);
+		assert_ver(1, 0, 0x100);
+		assert_ver(0, 1, 1);
+		assert_ver(2, 10, 0x20a);
+		assert_ver(0, 100, 0);
+		assert_ver(100, 0, 0);
 	}
 }
 
