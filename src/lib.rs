@@ -483,9 +483,10 @@ impl<'a> Iterator for ModuleChain<'a> {
 impl FusedIterator for ModuleChain<'_> { }
 
 /// Metadata for a single module in the ROM image.
+#[derive(Debug, Clone, Copy)]
 pub struct Module<'a> {
-	bytes: &'a Slice32,
-	offset: NonZeroU32,
+	pub bytes: &'a Slice32,
+	pub offset: NonZeroU32,
 }
 
 impl<'a> Module<'a> {
@@ -496,14 +497,6 @@ impl<'a> Module<'a> {
 			.and_then(Slice32::cstr) // reduce to cstr
 			.ok_or(RomDecodeError::UnterminatedCstr)
 	}
-
-	/// Returns a slice over the entire module contents.
-	#[inline]
-	pub const fn data(&self) -> &'a Slice32 { self.bytes }
-
-	/// Returns the offset of this module within the ROM image.
-	#[inline]
-	pub const fn offset(&self) -> NonZeroU32 { self.offset }
 }
 
 #[cfg(test)]
@@ -546,15 +539,15 @@ mod test {
 		let module = modules.next().unwrap();
 
 		assert_eq_hex!(Some(b"UtilityModule".as_slice()), module.title().ok().map(AsRef::as_ref));
-		assert_eq_hex!(NonZeroU32::new(0x60).unwrap(), module.offset());
+		assert_eq_hex!(NonZeroU32::new(0x60).unwrap(), module.offset);
 
 		let module = modules.next().unwrap();
 		assert_eq_hex!(Some(b"Module2".as_slice()), module.title().ok().map(AsRef::as_ref));
-		assert_eq_hex!(NonZeroU32::new(0xb4).unwrap(), module.offset());
+		assert_eq_hex!(NonZeroU32::new(0xb4).unwrap(), module.offset);
 
 		let module = modules.next().unwrap();
 		assert_eq_hex!(Some(b"Module3".as_slice()), module.title().ok().map(AsRef::as_ref));
-		assert_eq_hex!(NonZeroU32::new(0xdc).unwrap(), module.offset());
+		assert_eq_hex!(NonZeroU32::new(0xdc).unwrap(), module.offset);
 	}
 
 	#[test]
