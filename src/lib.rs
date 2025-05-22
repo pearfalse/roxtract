@@ -1,5 +1,9 @@
 //! Data extraction from an Acorn-era RISC OS ROM image.
 //!
+//! Roxtract allows you do perform heuristic metadata analysis on any ROM image of RISC OS 2 and 3,
+//! as well as Arthur. It can identify version information from the kernel and `UtilityModule`
+//! headers, and identify each contained module.
+//!
 //! The starting point for loading and interpreting a ROM image is the [`Rom`] struct.
 #![cfg_attr(debug_assertions, allow(dead_code))]
 
@@ -111,7 +115,12 @@ impl Error for RomDecodeError { }
 /// Other hardware-compatible ROM images that are not RISC OS-alikes may be loaded, but most of
 /// the [heuristic analysis](Self::heuristics) will fail.
 ///
-/// The ROM image has to be contiguous in system memory.
+/// The ROM image has to be contiguous in system memory, but can otherwise be stored within any
+/// type that implements [`Borrow<[u8]>`](std::borrow::Borrow).
+///
+/// This type uses reference counting internally, which makes it `!Send` by default. If you need
+/// to be able to use the same `Rom` object from multiple threads, compile Roxtract with the `sync`
+/// feature flag, which will upgrade it to use atomic reference counting instead.
 pub struct Rom<M: Borrow<[u8]> = Box<[u8]>> {
 	data: M,
 	heuristics: Xrc<Heuristics>,

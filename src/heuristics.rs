@@ -230,11 +230,7 @@ impl Slice32 {
 		}
 	}
 
-	/// Finds the byte offset a word in `self` that functions as an offset to a copy of `needle`
-	/// in `self`.
-	///
-	/// The `offset` parameter allows shifting the base of the relative addressing earlier by
-	/// some number of bytes.
+	/// Finds the byte offset to a copy of `needle` in `self`.
 	pub fn find(&self, needle: &Slice32) -> Option<u32> {
 		let mut haystack = self;
 		if haystack.is_empty() { return None; }
