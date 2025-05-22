@@ -193,18 +193,32 @@ impl<'a> WordCursor<'a> {
 		self.cursor_rel = self.cursor_rel.saturating_add(4); // saturation == guaranteed OOB
 	}
 
-	pub fn move_prev(&mut self) {
-		self.cursor_rel = self.cursor_rel.wrapping_sub(4); // underflow == guaranteed OOB
+	pub fn move_prev(&mut self) -> Option<()> {
+		self.cursor_rel = self.cursor_rel.checked_sub(4)?; // underflow == guaranteed OOB
+		Some(())
 	}
 
 	pub fn pos(&self) -> u32 { self.cursor_rel }
 }
 
 impl Slice32 {
-	/// Searches for `needle` in `self`, and returns a byte offset to it if found
-	pub fn find_offset_to(&self, needle: &Slice32, offset: u32) -> Option<u32> {
+	/// Searches for `needle` in `self`, and returns an index to a relative origin by finding a word
+	/// that points ahead to that needle based on some other fixed offset. In other words, this
+	/// function uses a relative indexing word in the slice and a known relative offset of that word
+	/// to back-solve where logical index 0 really is.
+	///
+	/// For example, if a slice contains a copy of the needle at index 50, the word at index 26
+	/// contains the value `40`, and the `offset`
+	/// parameter is `16`, then this function will return `Some(10)` (because the contents of the
+	/// word at 10+16 is 40, and 10+40 is 50, which is the offset to the needle as the slice
+	/// defines it).
+	///
+	/// This method is used to find the origin of `UtilityModule` by locating the module name, then
+	/// finding a word that functions as the title string offset (whose contents assume the offset
+	/// begins 0x10 bytes earlier).
+	fn find_offset_to(&self, needle: &Slice32, offset: u32) -> Option<u32> {
 		if self.len() < 4 { return None; }
-		let target = Self::find(self, needle)?;
+		let target = self.find(needle)?;
 		let mut cursor = WordCursor::new_end(self.subslice(0..target)?);
 
 		loop {
@@ -212,7 +226,7 @@ impl Slice32 {
 			if cursor.current().and_then(|cc| possible_start.checked_add(cc)) == Some(target) {
 				return Some(possible_start);
 			}
-			cursor.move_prev();
+			cursor.move_prev()?;
 		}
 	}
 
