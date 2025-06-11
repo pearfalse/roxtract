@@ -178,18 +178,18 @@ impl fmt::Display for ReleaseDate {
 
 
 impl ReleaseMonth {
-	const SHORT_JAN: [u8; 3] = [b'J',b'a',b'n'];
-	const SHORT_FEB: [u8; 3] = [b'F',b'e',b'b'];
-	const SHORT_MAR: [u8; 3] = [b'M',b'a',b'r'];
-	const SHORT_APR: [u8; 3] = [b'A',b'p',b'r'];
-	const SHORT_MAY: [u8; 3] = [b'M',b'a',b'y'];
-	const SHORT_JUN: [u8; 3] = [b'J',b'u',b'n'];
-	const SHORT_JUL: [u8; 3] = [b'J',b'u',b'l'];
-	const SHORT_AUG: [u8; 3] = [b'A',b'u',b'g'];
-	const SHORT_SEP: [u8; 3] = [b'S',b'e',b'p'];
-	const SHORT_OCT: [u8; 3] = [b'O',b'c',b't'];
-	const SHORT_NOV: [u8; 3] = [b'N',b'o',b'v'];
-	const SHORT_DEC: [u8; 3] = [b'D',b'e',b'c'];
+	const SHORT_JAN: [u8; 3] = *b"Jan";
+	const SHORT_FEB: [u8; 3] = *b"Feb";
+	const SHORT_MAR: [u8; 3] = *b"Mar";
+	const SHORT_APR: [u8; 3] = *b"Apr";
+	const SHORT_MAY: [u8; 3] = *b"May";
+	const SHORT_JUN: [u8; 3] = *b"Jun";
+	const SHORT_JUL: [u8; 3] = *b"Jul";
+	const SHORT_AUG: [u8; 3] = *b"Aug";
+	const SHORT_SEP: [u8; 3] = *b"Sep";
+	const SHORT_OCT: [u8; 3] = *b"Oct";
+	const SHORT_NOV: [u8; 3] = *b"Nov";
+	const SHORT_DEC: [u8; 3] = *b"Dec";
 
 	pub(crate) fn parse(src: &Slice32) -> Option<Self> {
 		match <[u8; 3]>::try_from(src.as_ref()).ok()? {
