@@ -1,8 +1,8 @@
 //! Data extraction from an Acorn-era RISC OS ROM image.
 //!
-//! Roxtract allows you do perform heuristic metadata analysis on any ROM image of RISC OS 2 and 3,
-//! as well as Arthur. It can identify version information from the kernel and `UtilityModule`
-//! headers, and identify each contained module.
+//! Roxtract lets you do heuristic metadata analysis on any ROM image of RISC OS 2 and 3, as well as
+//! Arthur. It can identify version information from the kernel and `UtilityModule` headers, and
+//! identify each contained module.
 //!
 //! The starting point for loading and interpreting a ROM image is the [`Rom`] struct.
 #![cfg_attr(debug_assertions, allow(dead_code))]
@@ -44,7 +44,7 @@ type Xrc<T> = std::sync::Arc<T>;
 pub enum RomLoadError {
 	/// The underlying device failed on an I/O operation
 	Io(io::Error),
-	/// The ROM is an invalid size
+	/// The ROM is an invalid size (over 12MiB, or not a multiple of 4 bytes)
 	RomInvalidSize,
 }
 
@@ -234,6 +234,9 @@ const ROM_LIMIT: u32 = 12 << 20; // 12 MiB limit in the Archimedes memory map
 
 impl Rom<Box<[u8]>> {
 	/// Creates a `Rom` owning its contents from a file.
+	///
+	/// ROM images split into four files, as often encouraged by older Archimedes emulators, are
+	/// not supported.
 	pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Rom<Box<[u8]>>, RomLoadError> {
 		let path = path.as_ref();
 		Self::from_file_with(path, |len| vec![0u8; len as usize].into_boxed_slice())
