@@ -16,7 +16,7 @@ struct CliArgs {
 fn main() -> Result<(), Box<dyn Error>> {
 	let args: CliArgs = gumdrop::parse_args_default_or_exit::<CliArgs>();
 
-	let rom = Rom::from_file(args.rom_path, |len| vec![0u8; len as usize].into_boxed_slice())?;
+	let rom = Rom::from_file(args.rom_path)?;
 	if let Some(known) = KnownRiscOsVersion::find(&rom) {
 		println!("ROM appears to be {}", known.name_high_level);
 	} else {
@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 			for ch in module.title()?.as_ref() {
 				print!("{}", (*ch as char).escape_default())
 			}
-			println!(" (size {} bytes) at {:06x}", module.data().len(), module.offset());
+			println!(" (size {} bytes) at {:06x}", module.bytes.len(), module.offset);
 		}
 	} else {
 		println!("could not find start of module chain");
