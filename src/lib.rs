@@ -329,7 +329,7 @@ impl<M: Borrow<[u8]>> Rom<M> {
 
 	/// Returns an iterator over all modules in the ROM chain.
 	pub fn module_chain(&self) -> Result<ModuleChain<'_>, RomDecodeError> {
-		self.module_chain_start().map(|addr| ModuleChain::new(self, addr))
+		self.module_chain_start().map(|addr| ModuleChain::new_from_rom(self, addr))
 	}
 
 	/// Returns a raw slice to the ROM image data.
@@ -439,18 +439,33 @@ impl<M: Borrow<[u8]>> Eq for Rom<M> { }
 
 /// An iterator over each module in the ROM image.
 pub struct ModuleChain<'a> {
-	rom: &'a Slice32,
+	data: &'a Slice32,
 	pos: u32,
 }
 
 impl<'a> ModuleChain<'a> {
-	fn new<M: Borrow<[u8]>>(rom: &'a Rom<M>, start: Offset) -> Self {
-		ModuleChain { rom: rom.as_slice32(), pos: start.get() }
+	fn new_from_rom<M: Borrow<[u8]>>(rom: &'a Rom<M>, start: Offset) -> Self {
+		ModuleChain { data: rom.as_slice32(), pos: start.get() }
+	}
+
+	/// Creates a new module chain directly from custom byte data.
+	///
+	/// The chain must be of the following form:
+	/// - Zero or more of the following:
+	///     - A 32-bit word (little endian) containing the size of the next entry, plus 4;
+	///     - The data in question.
+	/// - A single 32-bit non-positive word to terminate the list.
+	///
+	/// Note that Roxtract has less stringent requirements on the value of the terminating word. The
+	/// RISC OS module chain has to terminate with a zero; Roxtract also allows this to be a
+	/// negative number.
+	pub fn custom(data: &'a Slice32) -> Self {
+		ModuleChain { data, pos: 0 }
 	}
 
 	#[inline]
 	fn in_range(&self) -> impl Fn(&u32) -> bool {
-		let len = self.rom.len();
+		let len = self.data.len();
 		move |n| *n < len
 	}
 }
@@ -460,10 +475,10 @@ impl<'a> Iterator for ModuleChain<'a> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		let (module_start, module_len) = (
-			self.pos.checked_add(4)?, self.rom.read_word(self.pos)?
+			self.pos.checked_add(4)?, self.data.read_word(self.pos)?
 		);
 
-		if module_len > 0 {
+		if module_len as i32 > 0 {
 			self.pos = self.pos.checked_add(module_len)
 				.filter(self.in_range())
 				.unwrap_or(u32::MAX);
@@ -479,7 +494,7 @@ impl<'a> Iterator for ModuleChain<'a> {
 			self.pos = u32::MAX;
 			return None;
 		};
-		Some(Module { bytes: self.rom.subslice(r)?, offset })
+		Some(Module { bytes: self.data.subslice(r)?, offset })
 	}
 }
 
@@ -506,7 +521,7 @@ impl<'a> Module<'a> {
 mod test {
     use std::num::{NonZeroU32, NonZeroU64};
 
-    use crate::Slice32;
+    use super::*;
     use assert_hex::assert_eq_hex;
 
 	static ROM_TEST1: &[u8] = include_bytes!("../testrom1");
@@ -588,6 +603,30 @@ mod test {
 			assert_eq!(NonZeroU64::new(key),
 				Some(rom.heuristics.sort_key).filter(|n| *n != NonZeroU64::MAX));
 		}
+	}
+
+	#[test]
+	fn arbitrary_chain() {
+		const DATA: &[u8] = &[
+			0x20,0,0,0,
+
+			0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0x14,0,0,0,
+			b'T', b'i', b't', b'l', b'e', b'1', 0, 0xff,
+			
+			0x20,0,0,0,
+
+			0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0x14,0,0,0,
+			b'T', b'i', b't', b'l', b'e', b'2', 0, 0xff,
+
+			0,0,0,0x80, // we also allow -ve signed values to terminate the module chain
+
+		];
+		let mut chain = ModuleChain::custom(Slice32::new_unwrapped(DATA));
+		let module = chain.next().expect("one of two entries");
+		assert_eq!(module.title().map(Borrow::borrow), Ok(b"Title1".as_slice()));
+		let module = chain.next().expect("a second entry");
+		assert_eq!(module.title().map(Borrow::borrow), Ok(b"Title2".as_slice()));
+		assert!(chain.next().is_none());
 	}
 
 	#[test]
