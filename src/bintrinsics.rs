@@ -179,6 +179,15 @@ impl Slice32 {
 	}
 }
 
+impl<'a> Default for &'a Slice32 {
+	fn default() -> Self {
+		unsafe {
+			// SAFETY: an empty slice is definitely small enough
+			Slice32::new_unchecked(&[])
+		}
+	}
+}
+
 impl Borrow<[u8]> for Slice32 {
 	#[inline(always)]
 	fn borrow(&self) -> &[u8] {
