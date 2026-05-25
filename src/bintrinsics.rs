@@ -13,11 +13,13 @@ pub struct Slice32([u8]);
 
 impl Slice32 {
 	/// Returns the length of the slice.
+	#[inline]
 	pub const fn len(&self) -> u32 { self.0.len() as u32 }
 
 	const SIZE_LIMIT: usize = i32::MAX as usize;
 
 	/// Constructs a new `Slice32`, if its length is within range.
+	#[inline]
 	pub const fn new(src: &[u8]) -> Option<&Slice32> {
 		if src.len() > Self::SIZE_LIMIT { return None; }
 		Some(unsafe {
@@ -35,6 +37,7 @@ impl Slice32 {
 
 	/// Constructs a new `Slice32` variant via a `Box` allocation. If the array is too large, the
 	/// original `Box` is returned.
+	#[inline]
 	pub fn new_boxed(src: Box<[u8]>) -> Result<Box<Slice32>, Box<[u8]>> {
 		if src.len() > Self::SIZE_LIMIT { return Err(src); }
 
@@ -49,6 +52,7 @@ impl Slice32 {
 	/// # Safety
 	///
 	/// - Slice length must be no larger than `i32::MAX`.
+	#[inline]
 	pub const unsafe fn new_unchecked(src: &[u8]) -> &Self {
 		unsafe {
 			// SAFETY: this is a sound cast to a transparent wrapper type, but for the sake of
@@ -180,6 +184,7 @@ impl Slice32 {
 }
 
 impl<'a> Default for &'a Slice32 {
+	#[inline]
 	fn default() -> Self {
 		unsafe {
 			// SAFETY: an empty slice is definitely small enough
