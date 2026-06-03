@@ -471,7 +471,7 @@ impl<'a> ModuleChain<'a> {
 }
 
 impl<'a> Iterator for ModuleChain<'a> {
-	type Item = Module<'a>;
+	type Item = (&'a Module, NonZeroU32);
 
 	fn next(&mut self) -> Option<Self::Item> {
 		let (module_start, module_len) = (
@@ -494,20 +494,32 @@ impl<'a> Iterator for ModuleChain<'a> {
 			self.pos = u32::MAX;
 			return None;
 		};
-		Some(Module { bytes: self.data.subslice(r)?, offset })
+		self.data.subslice(r).map(|s| (Module::new(s), offset))
 	}
 }
 
 impl FusedIterator for ModuleChain<'_> { }
 
 /// Metadata for a single module in the ROM image.
-#[derive(Debug, Clone, Copy)]
-pub struct Module<'a> {
-	pub bytes: &'a Slice32,
-	pub offset: NonZeroU32,
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct Module {
+	/// A slice of the bytes making up the module.
+	pub bytes: Slice32,
 }
 
-impl<'a> Module<'a> {
+impl Module {
+	/// Constructs a new `Module` from the given byte slice.
+	///
+	/// This is a zero-cost type conversion.
+	#[inline]
+	pub const fn new(from: &Slice32) -> &Module {
+		unsafe {
+			// SAFETY: `Self` is a transparent wrapper, so this cast is always sound
+			&*(from as *const Slice32 as *const Self)
+		}
+	}
+
 	/// Returns a slice over the C-string of this module title.
 	pub fn title(&self) -> Result<&Slice32, RomDecodeError> {
 		self.bytes.read_word(0x10) // get title offset
@@ -554,18 +566,18 @@ mod test {
 		assert_eq_hex!(NonZeroU32::new(0x5c), rom.module_chain_start().ok());
 
 		let mut modules = rom.module_chain().unwrap();
-		let module = modules.next().unwrap();
+		let (module, offset) = modules.next().unwrap();
 
 		assert_eq_hex!(Some(b"UtilityModule".as_slice()), module.title().ok().map(AsRef::as_ref));
-		assert_eq_hex!(NonZeroU32::new(0x60).unwrap(), module.offset);
+		assert_eq_hex!(NonZeroU32::new(0x60).unwrap(), offset);
 
-		let module = modules.next().unwrap();
+		let (module, offset) = modules.next().unwrap();
 		assert_eq_hex!(Some(b"Module2".as_slice()), module.title().ok().map(AsRef::as_ref));
-		assert_eq_hex!(NonZeroU32::new(0xb4).unwrap(), module.offset);
+		assert_eq_hex!(NonZeroU32::new(0xb4).unwrap(), offset);
 
-		let module = modules.next().unwrap();
+		let (module, offset) = modules.next().unwrap();
 		assert_eq_hex!(Some(b"Module3".as_slice()), module.title().ok().map(AsRef::as_ref));
-		assert_eq_hex!(NonZeroU32::new(0xdc).unwrap(), module.offset);
+		assert_eq_hex!(NonZeroU32::new(0xdc).unwrap(), offset);
 	}
 
 	#[test]
@@ -622,9 +634,9 @@ mod test {
 
 		];
 		let mut chain = ModuleChain::custom(Slice32::new_unwrapped(DATA));
-		let module = chain.next().expect("one of two entries");
+		let (module, _) = chain.next().expect("one of two entries");
 		assert_eq!(module.title().map(Borrow::borrow), Ok(b"Title1".as_slice()));
-		let module = chain.next().expect("a second entry");
+		let (module, _) = chain.next().expect("a second entry");
 		assert_eq!(module.title().map(Borrow::borrow), Ok(b"Title2".as_slice()));
 		assert!(chain.next().is_none());
 	}
